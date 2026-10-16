@@ -1,31 +1,35 @@
 import fs from 'node:fs';
 import { DATA_DIR, SESSION_FILE, HOST } from './config.js';
 
-export function loadSession() {
-  if (!fs.existsSync(SESSION_FILE)) return null;
+export function loadSession(file = SESSION_FILE) {
+  if (!fs.existsSync(file)) return null;
   try {
-    return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
     return null;
   }
 }
 
-export function saveSession(session) {
+export function saveSession(session, file = SESSION_FILE) {
   fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2), { mode: 0o600 });
+  fs.writeFileSync(file, JSON.stringify(session, null, 2), { mode: 0o600 });
 }
 
-export function clearSession() {
-  fs.rmSync(SESSION_FILE, { force: true });
+export function clearSession(file = SESSION_FILE) {
+  fs.rmSync(file, { force: true });
 }
 
-// Only cookies scoped to the Minerva host are kept; Microsoft SSO cookies stay
-// in the browser profile and never reach the API client.
-export function minervaCookies(cookies) {
+// Only cookies scoped to the given host are kept; Microsoft SSO cookies stay
+// in the browser profile and never reach the API clients.
+export function cookiesFor(cookies, host) {
   return cookies.filter((c) => {
     const domain = c.domain.replace(/^\./, '');
-    return domain === HOST || HOST.endsWith(`.${domain}`);
+    return domain === host || host.endsWith(`.${domain}`);
   });
+}
+
+export function minervaCookies(cookies) {
+  return cookiesFor(cookies, HOST);
 }
 
 // BbRouter looks like "expires:1760000000,id:...,xsrf:...,timeout:10800".
