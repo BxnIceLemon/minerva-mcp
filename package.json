@@ -10,7 +10,8 @@
     "login": "node src/login.js",
     "login:gradescope": "node src/login-gradescope.js",
     "start": "node src/server.js",
-    "check": "node src/check.js"
+    "check": "node src/check.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"
