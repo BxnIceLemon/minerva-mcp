@@ -75,3 +75,11 @@ Or add it as JSON config, either in Claude Desktop's `claude_desktop_config.json
 - The Gradescope support works by parsing web pages, so a Gradescope redesign may require updating the parser.
 - Content inside third-party LTI tools such as Turnitin and Panopto is not available.
 - Please use this responsibly and follow the University's IT policies.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). `main` is protected: changes go through pull requests and must pass CI (`npm test`). To report a security issue, see [SECURITY.md](SECURITY.md).
+
+## License
+
+[ISC](LICENSE)

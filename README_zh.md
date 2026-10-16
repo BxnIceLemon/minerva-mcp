@@ -75,3 +75,11 @@ claude mcp add minerva --scope user -- node "<本文件夹的绝对路径>/src/s
 - Gradescope 部分是解析网页实现的，Gradescope 改版后可能需要更新解析代码。
 - Turnitin、Panopto 等第三方 LTI 工具里的内容拿不到。
 - 请合理使用，遵守学校的 IT 使用政策。
+
+## 参与贡献
+
+请看 [CONTRIBUTING.md](CONTRIBUTING.md)。`main` 分支受保护：所有改动都要走 PR，并通过 CI（`npm test`）。安全问题请按 [SECURITY.md](SECURITY.md) 私下报告。
+
+## 许可证
+
+[ISC](LICENSE)
