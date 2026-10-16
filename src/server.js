@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import * as minerva from './minerva.js';
+import * as gradescope from './gradescope.js';
 import { loadSession } from './session.js';
 
 const server = new McpServer({ name: 'minerva-leeds', version: '0.1.0' });
@@ -112,6 +113,49 @@ tool(
     params: z.record(z.string(), z.string()).optional().describe('Query parameters'),
   },
   minerva.rawGet,
+);
+
+const gsCourse = z
+  .string()
+  .describe('Gradescope course number like "1404490" (from gradescope_list_courses), or a module code like "COMP3620"');
+
+tool(
+  'gradescope_status',
+  'Check whether a Gradescope login is saved. Call this first if Gradescope tools report an expired session.',
+  {},
+  gradescope.status,
+);
+
+tool(
+  'gradescope_list_courses',
+  'List your Gradescope courses by term, newest first.',
+  { search: z.string().optional().describe('Filter by module code or name') },
+  gradescope.listCourses,
+);
+
+tool(
+  'gradescope_list_assignments',
+  'List assignments in a Gradescope course with submission status, score, release, due and late-due dates.',
+  { courseId: gsCourse },
+  gradescope.listAssignments,
+);
+
+tool(
+  'gradescope_get_submission',
+  'Show your graded submission: total score, per-question scores, applied rubric items, grader comments and autograder test results.',
+  {
+    courseId: gsCourse,
+    assignmentId: z.string(),
+    submissionId: z.string().optional().describe('Omit to use your latest submission'),
+  },
+  gradescope.getSubmission,
+);
+
+tool(
+  'gradescope_upcoming',
+  'List Gradescope assignments in the current term due in the next N days (default 14), with whether you have submitted.',
+  { days: z.number().int().min(1).max(180).optional() },
+  gradescope.upcoming,
 );
 
 await server.connect(new StdioServerTransport());
