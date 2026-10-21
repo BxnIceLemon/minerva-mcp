@@ -24,5 +24,5 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Syntax check
-        run: for f in src/*.js test/*.js; do node --check "$f"; done
+        run: find src test -name "*.js" -print0 | xargs -0 -n1 node --check
       - run: npm test

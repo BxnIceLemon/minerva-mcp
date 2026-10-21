@@ -12,11 +12,15 @@ Thanks for helping. A few rules keep this project safe for everyone who signs in
 
 ## Ground rules
 
-- **Read-only.** Clients only send GET requests. Changes that submit, post or modify anything on Minerva or Gradescope will not be accepted.
+- **Writes stay narrow.** Minerva is read-only. On Gradescope the only actions that change anything are `submit` and `regrade` (`src/gradescope/write.js`). A new write action needs a strong reason, and it must:
+  - support a dry run
+  - ask for confirmation in the CLI
+  - in MCP, be registered only with `GRADESCOPE_ALLOW_WRITE=1` and require `confirm: true`
+- **Never test writes against real coursework.** Use dry runs. Don't upload to or file regrade requests on assignments just to test.
 - **Stay on the two hosts.** Session cookies must only ever go to `minerva.leeds.ac.uk` and `www.gradescope.com`.
 - **No personal data in the repo.** Never commit session files, cookies, saved HTML pages, screenshots or tool output from your account. Build test fixtures by hand with fake names and IDs.
 - **Match the existing style.** Plain ES modules, no build step, small focused files.
 
 ## Testing against a real account
 
-`npm test` runs offline. To check your change against the real sites, run `npm run login`, `npm run login:gradescope` and `npm run check`, then try the tools from an MCP client. Describe what you tested in the PR, without pasting personal data.
+`npm test` runs offline. To check your change against the real sites, run `npm run login`, `npm run login:gradescope` and `npm run check`, then try the tools from an MCP client or the `gradescope` CLI. Describe what you tested in the PR, without pasting personal data.

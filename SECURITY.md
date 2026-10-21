@@ -17,7 +17,9 @@ You should get a reply within 7 days.
 ## What counts
 
 - A way for session cookies to leave `minerva.leeds.ac.uk` or `www.gradescope.com`
-- A way for the server to send anything other than GET requests
+- A way to send a non-GET request other than the Gradescope `submit` and `regrade` actions
+- A way for `submit` or `regrade` to send without confirmation: skipping the CLI prompt, or the MCP tools working without `GRADESCOPE_ALLOW_WRITE=1` or without `confirm: true`
+- A way for an upload to include files the user didn't name
 - Session files or the browser profile being readable by other users, or being written into the project folder
 - Path traversal in attachment downloads
 
