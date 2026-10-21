@@ -12,10 +12,14 @@ const courseId = z
   .string()
   .describe('Course primary id like "_123456_1" (from minerva_list_courses), or the course code');
 
-function tool(name, description, inputSchema, fn) {
+function tool(name, description, inputSchema, fn, annotations) {
   server.registerTool(
     name,
-    { description, inputSchema, annotations: { readOnlyHint: name !== 'minerva_download_attachment', openWorldHint: true } },
+    {
+      description,
+      inputSchema,
+      annotations: annotations ?? { readOnlyHint: name !== 'minerva_download_attachment', openWorldHint: true },
+    },
     async (args) => {
       try {
         const result = await fn(args ?? {});
@@ -117,7 +121,7 @@ tool(
 
 const gsCourse = z
   .string()
-  .describe('Gradescope course number like "1404490" (from gradescope_list_courses), or a module code like "COMP3620"');
+  .describe('Gradescope course number like "1234567" (from gradescope_list_courses), or a module code like "COMP3620"');
 
 tool(
   'gradescope_status',
@@ -140,15 +144,49 @@ tool(
   gradescope.listAssignments,
 );
 
+const gsAssignment = z
+  .string()
+  .describe('Assignment id (from gradescope_list_assignments) or a unique part of its title, e.g. "Perceptron"');
+const gsSubmission = z.string().optional().describe('Omit to use your active submission');
+
 tool(
   'gradescope_get_submission',
-  'Show your graded submission: total score, per-question scores, applied rubric items, grader comments and autograder test results.',
+  'Show your submission in full: total score, per-question scores, rubric items, grader comments, annotations, regrade threads and autograder test results.',
+  { courseId: gsCourse, assignmentId: gsAssignment, submissionId: gsSubmission },
+  gradescope.getSubmission,
+);
+
+tool(
+  'gradescope_get_results',
+  'Show the autograder results of a code submission: each test with its score, status and output. Set waitSeconds to poll until a just-uploaded submission finishes running.',
   {
     courseId: gsCourse,
-    assignmentId: z.string(),
-    submissionId: z.string().optional().describe('Omit to use your latest submission'),
+    assignmentId: gsAssignment,
+    submissionId: gsSubmission,
+    waitSeconds: z.number().int().min(0).max(300).optional().describe('Poll up to this many seconds while the autograder runs'),
   },
-  gradescope.getSubmission,
+  ({ waitSeconds, ...args }) => (waitSeconds ? gradescope.waitForResults({ ...args, timeout: waitSeconds }) : gradescope.getResults(args)),
+);
+
+tool(
+  'gradescope_get_comments',
+  'Show grader feedback on a submission: applied rubric items, comments, annotations, and any regrade requests with the staff replies.',
+  { courseId: gsCourse, assignmentId: gsAssignment, submissionId: gsSubmission },
+  gradescope.getComments,
+);
+
+tool(
+  'gradescope_list_submissions',
+  'List all your submissions to an assignment, newest first, marking the active one.',
+  { courseId: gsCourse, assignmentId: gsAssignment },
+  gradescope.listSubmissions,
+);
+
+tool(
+  'gradescope_grades',
+  'Scores for every assignment in a Gradescope course, with the course total so far.',
+  { courseId: gsCourse },
+  gradescope.grades,
 );
 
 tool(
@@ -157,5 +195,52 @@ tool(
   { days: z.number().int().min(1).max(180).optional() },
   gradescope.upcoming,
 );
+
+// Write tools exist only when the user opts in with GRADESCOPE_ALLOW_WRITE=1.
+// Even then each call needs confirm: true, and dryRun shows the plan first.
+if (process.env.GRADESCOPE_ALLOW_WRITE === '1') {
+  const confirm = z
+    .boolean()
+    .optional()
+    .describe('Must be true to actually send. Only set it after showing the user the dryRun plan and getting their explicit yes.');
+  const guarded = (fn) => (args) => {
+    const { confirm: ok, dryRun, ...rest } = args;
+    if (!dryRun && ok !== true) {
+      throw new Error('Not sent. Call again with dryRun: true, show the plan to the user, and only then call with confirm: true.');
+    }
+    return fn({ ...rest, dryRun: Boolean(dryRun) });
+  };
+
+  tool(
+    'gradescope_submit',
+    'Upload files as your submission to a Gradescope assignment (code, PDF or document). This replaces your active submission and course staff can see it. Only use when the user explicitly asks to submit. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
+    {
+      courseId: gsCourse,
+      assignmentId: gsAssignment,
+      files: z.array(z.string()).min(1).describe('Absolute paths of the files to upload'),
+      leaderboardName: z.string().optional().describe('Required when the assignment has a leaderboard'),
+      dryRun: z.boolean().optional().describe('Validate and return the plan without uploading'),
+      confirm,
+    },
+    guarded(gradescope.submit),
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  );
+
+  tool(
+    'gradescope_request_regrade',
+    'Send a regrade request on one question to the course staff, or update your pending one. The staff will read it. Only use when the user explicitly asks and has approved the exact wording. Always call with dryRun: true first.',
+    {
+      courseId: gsCourse,
+      assignmentId: gsAssignment,
+      submissionId: gsSubmission,
+      question: z.string().describe('Question number like "2.1", or a unique part of its title'),
+      comment: z.string().min(1).describe("The request text, in the user's own words"),
+      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+      confirm,
+    },
+    guarded(gradescope.requestRegrade),
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  );
+}
 
 await server.connect(new StdioServerTransport());

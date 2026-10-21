@@ -16,7 +16,7 @@ before(async () => {
     new StdioClientTransport({
       command: process.execPath,
       args: ['src/server.js'],
-      env: { ...process.env, MINERVA_MCP_HOME: home },
+      env: { ...process.env, MINERVA_MCP_HOME: home, GRADESCOPE_ALLOW_WRITE: '' },
     }),
   );
 });
@@ -31,12 +31,48 @@ async function call(name, args = {}) {
   return { isError: Boolean(r.isError), text: r.content[0].text };
 }
 
-test('registers every tool', async () => {
+test('registers every read tool and no write tools by default', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  assert.equal(names.length, 16);
-  assert.ok(names.filter((n) => n.startsWith('minerva_')).length === 11);
-  assert.ok(names.filter((n) => n.startsWith('gradescope_')).length === 5);
+  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 11);
+  assert.equal(names.filter((n) => n.startsWith('gradescope_')).length, 9);
+  assert.ok(!names.includes('gradescope_submit'));
+  assert.ok(!names.includes('gradescope_request_regrade'));
+  for (const t of tools) assert.notEqual(t.annotations?.destructiveHint, true, t.name);
+});
+
+test('write tools appear only with GRADESCOPE_ALLOW_WRITE=1 and refuse without confirm', async () => {
+  const writer = new Client({ name: 'test-write', version: '0' });
+  await writer.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: ['src/server.js'],
+      env: { ...process.env, MINERVA_MCP_HOME: home, GRADESCOPE_ALLOW_WRITE: '1' },
+    }),
+  );
+  try {
+    const { tools } = await writer.listTools();
+    const submit = tools.find((t) => t.name === 'gradescope_submit');
+    assert.ok(submit);
+    assert.equal(submit.annotations.destructiveHint, true);
+    assert.ok(tools.find((t) => t.name === 'gradescope_request_regrade'));
+
+    const r = await writer.callTool({
+      name: 'gradescope_submit',
+      arguments: { courseId: '1', assignmentId: '2', files: ['x.py'] },
+    });
+    assert.ok(r.isError);
+    assert.match(r.content[0].text, /Not sent/);
+
+    const g = await writer.callTool({
+      name: 'gradescope_request_regrade',
+      arguments: { courseId: '1', assignmentId: '2', question: '1.1', comment: 'x', confirm: false },
+    });
+    assert.ok(g.isError);
+    assert.match(g.content[0].text, /Not sent/);
+  } finally {
+    await writer.close();
+  }
 });
 
 test('reports not signed in when no session is saved', async () => {
