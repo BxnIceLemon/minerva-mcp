@@ -6,11 +6,11 @@ import { GS_BASE_URL, GS_HOST, GS_SESSION_FILE } from '../config.js';
 import { loadSession, saveSession } from '../session.js';
 import { SessionError } from '../client.js';
 
-const EXPIRED = 'Gradescope session expired. Run `npm run login:gradescope` (or `gradescope login`) again.';
+const EXPIRED = 'Gradescope session expired. Call the gradescope_login tool, or run `gradescope login` (`npm run login:gradescope`).';
 
 function session() {
   const s = loadSession(GS_SESSION_FILE);
-  if (!s) throw new SessionError('Not signed in to Gradescope. Run `npm run login:gradescope` (or `gradescope login`) first.');
+  if (!s) throw new SessionError('Not signed in to Gradescope. Call the gradescope_login tool, or run `gradescope login` (`npm run login:gradescope`).');
   return s;
 }
 

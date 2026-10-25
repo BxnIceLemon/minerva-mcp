@@ -12,4 +12,7 @@ export const PROFILE_DIR = path.join(DATA_DIR, 'browser-profile');
 export const GS_BASE_URL = 'https://www.gradescope.com';
 export const GS_HOST = 'www.gradescope.com';
 export const GS_SESSION_FILE = path.join(DATA_DIR, 'gradescope-session.json');
+// Gradescope's "School Credentials" entry for the University of Leeds. It signs
+// in through the same Microsoft account as Minerva.
+export const GS_SSO_PATH = process.env.GRADESCOPE_SSO_PATH || '/auth/saml/ae954ab5-1840-431e-a2ca-dc881c5358ed';
 export const DOWNLOAD_DIR =process.env.MINERVA_DOWNLOAD_DIR || path.join(os.homedir(), 'Downloads', 'minerva');

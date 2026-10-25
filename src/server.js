@@ -5,6 +5,7 @@ import { z } from 'zod';
 import * as minerva from './minerva.js';
 import * as gradescope from './gradescope.js';
 import { loadSession } from './session.js';
+import { agentLogin, pendingLogin } from './login-manager.js';
 
 const server = new McpServer({ name: 'minerva-leeds', version: '0.1.0' });
 
@@ -33,14 +34,39 @@ function tool(name, description, inputSchema, fn, annotations) {
 
 tool(
   'minerva_status',
-  'Check whether a Minerva login session is saved and when it expires. Call this first if other tools report an expired session.',
+  'Check whether a Minerva login session is saved and when it expires.',
   {},
   async () => {
     const s = loadSession();
-    if (!s) return { signedIn: false, fix: 'Run `npm run login` in the minerva-mcp folder.' };
-    return { signedIn: true, userName: s.userName, savedAt: s.savedAt, expiresAt: s.expiresAt };
+    const pending = pendingLogin('minerva');
+    if (!s) return { signedIn: false, loginInProgress: pending, fix: 'Call the minerva_login tool, or run `npm run login` in the minerva-mcp folder.' };
+    return { signedIn: true, userName: s.userName, savedAt: s.savedAt, expiresAt: s.expiresAt, loginInProgress: pending };
   },
 );
+
+const waitSeconds = z
+  .number()
+  .int()
+  .min(0)
+  .max(240)
+  .optional()
+  .describe('How long to wait for the sign-in to finish before returning (default 60)');
+
+for (const [service, label] of [
+  ['minerva', 'Minerva'],
+  ['gradescope', 'Gradescope'],
+]) {
+  tool(
+    `${service}_login`,
+    `Sign in to ${label} or refresh an expired session. Call this whenever a ${label} tool says the session expired or you are not signed in. ` +
+      'It first refreshes silently (a few seconds, no window). If the user has to sign in, it opens the University sign-in page in their default browser: ' +
+      'tell the user a browser window opened and ask them to sign in there. If the result says waitingForUser, call again after the user says they are done. ' +
+      'Never ask the user for their password; they type it in the browser.',
+    { waitSeconds },
+    ({ waitSeconds: w }) => agentLogin(service, { waitSeconds: w }),
+    { readOnlyHint: true, openWorldHint: true },
+  );
+}
 
 tool('minerva_whoami', 'Show the signed-in Minerva user.', {}, () => minerva.whoami());
 
@@ -125,9 +151,9 @@ const gsCourse = z
 
 tool(
   'gradescope_status',
-  'Check whether a Gradescope login is saved. Call this first if Gradescope tools report an expired session.',
+  'Check whether a Gradescope login is saved.',
   {},
-  gradescope.status,
+  () => ({ ...gradescope.status(), loginInProgress: pendingLogin('gradescope') }),
 );
 
 tool(
