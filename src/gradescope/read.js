@@ -7,7 +7,7 @@ import { parseCourses, parseAssignments, reactProps, shapeSubmission, shapeHisto
 
 export function status() {
   const s = loadSession(GS_SESSION_FILE);
-  if (!s) return { signedIn: false, fix: 'Run `npm run login:gradescope` (or `gradescope login`).' };
+  if (!s) return { signedIn: false, fix: 'Call the gradescope_login tool, or run `gradescope login` (`npm run login:gradescope`).' };
   return { signedIn: true, savedAt: s.savedAt, rememberMeExpires: s.expiresAt };
 }
 

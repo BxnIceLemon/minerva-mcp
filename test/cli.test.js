@@ -11,7 +11,7 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'minerva-cli-test-'));
 function cli(...args) {
   const r = spawnSync(process.execPath, ['src/cli.js', ...args], {
     encoding: 'utf8',
-    env: { ...process.env, MINERVA_MCP_HOME: home },
+    env: { ...process.env, MINERVA_MCP_HOME: home, MINERVA_NO_AUTO_LOGIN: '1' },
     input: '',
   });
   return { code: r.status, out: r.stdout, err: r.stderr };
