@@ -14,7 +14,7 @@ Minerva access is read-only. For Gradescope you can also upload submissions and 
 - Requests only go to `minerva.leeds.ac.uk` and `www.gradescope.com`. When a file download redirects to Blackboard's file host, the session cookie is dropped.
 - Minerva: only GET requests. Gradescope: only GET requests, except `submit` and `regrade`:
   - In the CLI, both show what they will do and ask `[y/N]` before sending. `--dry-run` only shows the plan.
-  - In MCP, the write tools don't exist unless you set `GRADESCOPE_ALLOW_WRITE=1`. Even then, every call needs `confirm: true`, and Claude is told to show you a dry run and get your yes first.
+  - In MCP, the write tools don't exist unless you set `GRADESCOPE_ALLOW_WRITE=1`. Even then, every call needs `confirm: true`, and the agent is told to show you a dry run and get your yes first.
 - There is no telemetry.
 
 ## Usage
@@ -34,7 +34,7 @@ Sessions expire after a few hours, but you rarely need to sign in again:
 
 - **Silent refresh.** Every login first tries a hidden window. If Microsoft still remembers you ("Stay signed in"), the session is renewed in a few seconds with no window.
 - **CLI.** When a `gradescope` command finds its session expired, it refreshes silently and retries. If you have to sign in, it asks whether to open the sign-in page.
-- **Agent.** The MCP server has `minerva_login` and `gradescope_login` tools. When a tool reports an expired session, Claude can call them itself. If you need to act, the University sign-in page opens in your default browser and Claude asks you to finish signing in.
+- **Agent.** The MCP server has `minerva_login` and `gradescope_login` tools. When a tool reports an expired session, the agent (Claude, Codex or any other MCP client) can call them itself. If you need to act, the University sign-in page opens in your default browser and the agent asks you to finish signing in.
 
 ## Gradescope CLI
 
@@ -81,6 +81,24 @@ Or add it as JSON config, either in Claude Desktop's `claude_desktop_config.json
   }
 }
 ```
+
+## Add to Codex
+
+```bash
+codex mcp add minerva -- node "<absolute path to this folder>/src/server.js"
+```
+
+Or add it to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.minerva]
+command = "node"
+args = ["<absolute path>/src/server.js"]
+tool_timeout_sec = 300   # waiting for a sign-in or an autograder can take longer than Codex's 60 s default
+# env = { GRADESCOPE_ALLOW_WRITE = "1" }   # only if Codex should get the Gradescope write tools
+```
+
+Restart Codex afterwards. The tools work the same in Codex. With the default 60 s timeout they still work, but `minerva_login` / `gradescope_login` return `waitingForUser` sooner, and `gradescope_get_results` should be called with `waitSeconds` under 60.
 
 ## MCP tools
 

@@ -50,7 +50,7 @@ const waitSeconds = z
   .min(0)
   .max(240)
   .optional()
-  .describe('How long to wait for the sign-in to finish before returning (default 60)');
+  .describe('How long to wait for the sign-in to finish before returning (default 45, which fits Codex's default 60 s tool timeout)');
 
 for (const [service, label] of [
   ['minerva', 'Minerva'],
