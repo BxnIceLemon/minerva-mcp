@@ -8,8 +8,9 @@ Minerva access is read-only. For Gradescope you can also upload submissions and 
 
 ## Security
 
-- You type your password and MFA code into an Edge or Chrome window yourself. The scripts never see them.
-- Sessions are saved in `~/.minerva-mcp/session.json` and `~/.minerva-mcp/gradescope-session.json`. The browser profile is in `~/.minerva-mcp/browser-profile`. None of these are inside the project folder.
+- Sign-in happens in your system default browser (Edge, Chrome, Brave and other Chromium browsers). You type your password and MFA code there yourself; the code never sees them.
+- The browser runs with a dedicated profile in `~/.minerva-mcp/browser-profile`, separate from your everyday profile. The tools never read your normal browser's cookies or saved passwords.
+- Sessions are saved in `~/.minerva-mcp/session.json` and `~/.minerva-mcp/gradescope-session.json`. None of these are inside the project folder.
 - Requests only go to `minerva.leeds.ac.uk` and `www.gradescope.com`. When a file download redirects to Blackboard's file host, the session cookie is dropped.
 - Minerva: only GET requests. Gradescope: only GET requests, except `submit` and `regrade`:
   - In the CLI, both show what they will do and ask `[y/N]` before sending. `--dry-run` only shows the plan.
@@ -27,7 +28,13 @@ npm run login:gradescope   # sign in to Gradescope (School Credentials → Unive
 npm run check              # prints your name and current courses
 ```
 
-A Blackboard session usually expires after a few hours. When it does, run `npm run login` again. If Gradescope expires, run `npm run login:gradescope`. The browser profile keeps Microsoft's "Stay signed in" state, so later logins usually don't ask for your password again.
+Both logins open your default browser. Gradescope goes straight to the University of Leeds sign-in, the same Microsoft account as Minerva.
+
+Sessions expire after a few hours, but you rarely need to sign in again:
+
+- **Silent refresh.** Every login first tries a hidden window. If Microsoft still remembers you ("Stay signed in"), the session is renewed in a few seconds with no window.
+- **CLI.** When a `gradescope` command finds its session expired, it refreshes silently and retries. If you have to sign in, it asks whether to open the sign-in page.
+- **Agent.** The MCP server has `minerva_login` and `gradescope_login` tools. When a tool reports an expired session, Claude can call them itself. If you need to act, the University sign-in page opens in your default browser and Claude asks you to finish signing in.
 
 ## Gradescope CLI
 
@@ -80,6 +87,7 @@ Or add it as JSON config, either in Claude Desktop's `claude_desktop_config.json
 | Tool | What it does |
 | --- | --- |
 | `minerva_status` | Check whether you're signed in and when the session expires |
+| `minerva_login` | Refresh or start a Minerva sign-in; opens your default browser if you need to act |
 | `minerva_whoami` | Show the signed-in user |
 | `minerva_list_courses` | List your courses, optionally filtered by code or name |
 | `minerva_list_announcements` | Announcements for a course |
@@ -91,6 +99,7 @@ Or add it as JSON config, either in Claude Desktop's `claude_desktop_config.json
 | `minerva_calendar` | Calendar events |
 | `minerva_api_get` | GET any `/learn/api/public/` endpoint directly |
 | `gradescope_status` | Check whether you're signed in to Gradescope |
+| `gradescope_login` | Refresh or start a Gradescope sign-in through Leeds SSO; opens your default browser if needed |
 | `gradescope_list_courses` | Your Gradescope courses by term, newest first |
 | `gradescope_list_assignments` | Assignments in a course: submission status, score, release, due and late-due dates |
 | `gradescope_upcoming` | Gradescope assignments due this term in the next N days |
@@ -104,10 +113,12 @@ Or add it as JSON config, either in Claude Desktop's `claude_desktop_config.json
 
 ## Environment variables
 
-- `MINERVA_BROWSER`: the browser channel used for login (`msedge` or `chrome`). Edge is tried first by default.
+- `MINERVA_BROWSER`: the browser for sign-in, as a path to its executable or a channel (`msedge`, `chrome`). Defaults to your system default browser. If that is Firefox or Safari, which can't be automated, an installed Edge or Chrome is used instead.
 - `MINERVA_MCP_HOME`: the session folder. Defaults to `~/.minerva-mcp`.
 - `MINERVA_DOWNLOAD_DIR`: the download folder. Defaults to `~/Downloads/minerva`.
 - `GRADESCOPE_ALLOW_WRITE`: set to `1` to register the MCP write tools. The CLI doesn't need it.
+- `GRADESCOPE_SSO_PATH`: Gradescope's school sign-in path. Defaults to the University of Leeds; set it to an empty value to use the plain Gradescope login page.
+- `MINERVA_NO_AUTO_LOGIN`: set to `1` to stop the CLI from refreshing an expired session by itself.
 
 ## Known limitations
 

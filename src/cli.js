@@ -2,11 +2,11 @@
 // Gradescope command-line client. Reads work like the MCP tools; `submit` and
 // `regrade` show what they will do and ask before sending anything.
 import { parseArgs } from 'node:util';
-import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import * as gs from './gradescope.js';
+import { SessionError } from './client.js';
+import { login } from './auth.js';
+import { runLoginCli } from './login-cli.js';
 
 const HELP = `Usage: gradescope <command> [options]
 
@@ -113,11 +113,7 @@ function printAutograder(ag) {
 
 const commands = {
   async login() {
-    const script = path.join(path.dirname(fileURLToPath(import.meta.url)), 'login-gradescope.js');
-    await new Promise((resolve, reject) => {
-      const p = spawn(process.execPath, [script], { stdio: 'inherit' });
-      p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error('Login was not completed'))));
-    });
+    if ((await runLoginCli('gradescope')) !== 0) throw new Error('Login was not completed');
   },
 
   async status(_, o) {
@@ -297,14 +293,34 @@ async function main(argv) {
     console.error(`Unknown command "${cmd}". Run gradescope --help.`);
     return 2;
   }
-  try {
+  const runOnce = async () => {
     const out = await fn(rest, parsed.values);
     if (parsed.values.json && out !== undefined) console.log(JSON.stringify(out, null, 2));
     return 0;
+  };
+  try {
+    try {
+      return await runOnce();
+    } catch (e) {
+      if (!(e instanceof SessionError) || cmd === 'login' || !(await recoverSession())) throw e;
+      return await runOnce();
+    }
   } catch (e) {
     console.error(e.message);
     return e instanceof UsageError ? 2 : 1;
   }
+}
+
+// On an expired session: refresh silently, and if that isn't enough and we're
+// in a terminal, offer to open the sign-in page. Returns true to retry.
+async function recoverSession() {
+  if (process.env.MINERVA_NO_AUTO_LOGIN === '1') return false;
+  process.stderr.write('Gradescope session expired; refreshing…\n');
+  const quiet = await login('gradescope', { interactive: false }).catch(() => ({ signedIn: false }));
+  if (quiet.signedIn) return true;
+  if (!process.stdin.isTTY) return false;
+  if (!(await confirm('Open the Gradescope sign-in page in your browser?', false))) return false;
+  return (await runLoginCli('gradescope', { silent: false })) === 0;
 }
 
 process.exitCode = await main(process.argv.slice(2));

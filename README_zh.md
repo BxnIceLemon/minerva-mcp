@@ -8,8 +8,9 @@ Minerva 部分只读。Gradescope 还支持上传作业和提交重评申请，�
 
 ## 安全性
 
-- 密码和 MFA 都由你在 Edge/Chrome 窗口里输入，脚本接触不到。
-- 会话保存在 `~/.minerva-mcp/session.json` 和 `~/.minerva-mcp/gradescope-session.json`，浏览器配置在 `~/.minerva-mcp/browser-profile`，都不在项目目录里。
+- 登录在系统默认浏览器里进行，支持 Edge、Chrome、Brave 等 Chromium 内核的浏览器。密码和 MFA 都由你自己在浏览器里输入，代码接触不到。
+- 浏览器使用 `~/.minerva-mcp/browser-profile` 里的专用配置，和你日常用的配置分开。工具不会读取你平时浏览器里的 cookie 或保存的密码。
+- 会话保存在 `~/.minerva-mcp/session.json` 和 `~/.minerva-mcp/gradescope-session.json`，都不在项目目录里。
 - 请求只发往 `minerva.leeds.ac.uk` 和 `www.gradescope.com`。文件下载跳转到 Blackboard 的文件域名时，会去掉 cookie。
 - Minerva 只发 GET 请求。Gradescope 也只发 GET 请求，例外只有 `submit` 和 `regrade`：
   - 在 CLI 里，这两个命令都会先显示要做什么，问你 `[y/N]`，确认后才发送。加 `--dry-run` 则只显示计划，不发送。
@@ -27,7 +28,13 @@ npm run login:gradescope   # 登录 Gradescope（选 School Credentials → Univ
 npm run check              # 打印你的名字和当前课程列表
 ```
 
-Blackboard 会话一般几个小时后过期，过期后重新运行 `npm run login` 就行；Gradescope 过期了就重新运行 `npm run login:gradescope`。浏览器配置会保留 Microsoft 的“保持登录”状态，所以之后再登录通常不需要重新输密码。
+两个登录命令都会打开你的默认浏览器。Gradescope 会直接跳到利兹大学的单点登录，用的是和 Minerva 同一个 Microsoft 账号。
+
+会话几个小时后就会过期，但一般不需要你重新登录：
+
+- **静默续期**：每次登录都会先在后台的隐藏窗口里尝试。只要 Microsoft 还记得你（“保持登录”），几秒内就能续上，不会弹出窗口。
+- **CLI**：`gradescope` 命令发现会话过期时，会先静默续期，再自动重试。如果需要你亲自登录，会先问你要不要打开登录页。
+- **Agent**：MCP 服务器提供 `minerva_login` 和 `gradescope_login` 两个工具。其他工具报告会话过期时，Claude 可以自己调用它们。需要你操作时，学校的登录页会在默认浏览器里打开，Claude 会提示你完成登录。
 
 ## Gradescope 命令行
 
@@ -80,6 +87,7 @@ claude mcp add minerva --scope user -- node "<本文件夹的绝对路径>/src/s
 | 工具 | 用途 |
 | --- | --- |
 | `minerva_status` | 检查是否已登录，以及会话何时过期 |
+| `minerva_login` | 续期或重新登录 Minerva；需要你操作时会打开默认浏览器 |
 | `minerva_whoami` | 当前用户 |
 | `minerva_list_courses` | 课程列表，可按代码或名称筛选 |
 | `minerva_list_announcements` | 某门课的公告 |
@@ -91,6 +99,7 @@ claude mcp add minerva --scope user -- node "<本文件夹的绝对路径>/src/s
 | `minerva_calendar` | 日历事件 |
 | `minerva_api_get` | 直接 GET 任意 `/learn/api/public/` 接口 |
 | `gradescope_status` | 检查 Gradescope 是否已登录 |
+| `gradescope_login` | 通过 Leeds 单点登录续期或重新登录 Gradescope；需要时会打开默认浏览器 |
 | `gradescope_list_courses` | Gradescope 课程列表（按学期，最新在前） |
 | `gradescope_list_assignments` | 某门课的作业：提交状态、分数、发布 / 截止 / 迟交截止时间 |
 | `gradescope_upcoming` | 本学期 N 天内要交的 Gradescope 作业 |
@@ -104,10 +113,12 @@ claude mcp add minerva --scope user -- node "<本文件夹的绝对路径>/src/s
 
 ## 环境变量
 
-- `MINERVA_BROWSER`：登录用的浏览器通道（`msedge` / `chrome`），默认先试 Edge
+- `MINERVA_BROWSER`：登录用的浏览器，可以填可执行文件路径，也可以填通道名（`msedge`、`chrome`）。默认用系统默认浏览器。如果默认浏览器是无法自动化的 Firefox 或 Safari，会改用已安装的 Edge 或 Chrome。
 - `MINERVA_MCP_HOME`：会话目录，默认 `~/.minerva-mcp`
 - `MINERVA_DOWNLOAD_DIR`：下载目录，默认 `~/Downloads/minerva`
 - `GRADESCOPE_ALLOW_WRITE`：设为 `1` 才会注册 MCP 的写工具。CLI 不受这个变量影响。
+- `GRADESCOPE_SSO_PATH`：Gradescope 学校单点登录的路径，默认是利兹大学的。设为空值则改用 Gradescope 的普通登录页。
+- `MINERVA_NO_AUTO_LOGIN`：设为 `1` 后，CLI 不会在会话过期时自动续期。
 
 ## 已知限制
 

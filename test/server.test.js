@@ -34,8 +34,10 @@ async function call(name, args = {}) {
 test('registers every read tool and no write tools by default', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 11);
-  assert.equal(names.filter((n) => n.startsWith('gradescope_')).length, 9);
+  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 12);
+  assert.equal(names.filter((n) => n.startsWith('gradescope_')).length, 10);
+  assert.ok(names.includes('minerva_login'));
+  assert.ok(names.includes('gradescope_login'));
   assert.ok(!names.includes('gradescope_submit'));
   assert.ok(!names.includes('gradescope_request_regrade'));
   for (const t of tools) assert.notEqual(t.annotations?.destructiveHint, true, t.name);
@@ -83,9 +85,11 @@ test('reports not signed in when no session is saved', async () => {
 test('tools fail with a login hint instead of crashing', async () => {
   const m = await call('minerva_list_courses');
   assert.ok(m.isError);
+  assert.match(m.text, /minerva_login tool/);
   assert.match(m.text, /npm run login/);
   const g = await call('gradescope_list_courses');
   assert.ok(g.isError);
+  assert.match(g.text, /gradescope_login tool/);
   assert.match(g.text, /npm run login:gradescope/);
 });
 

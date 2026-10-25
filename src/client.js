@@ -19,7 +19,7 @@ function resolve(url) {
 
 function session() {
   const s = loadSession();
-  if (!s) throw new SessionError('Not signed in. Run `npm run login` in the minerva-mcp folder first.');
+  if (!s) throw new SessionError('Not signed in to Minerva. Call the minerva_login tool, or run `npm run login` in the minerva-mcp folder.');
   return s;
 }
 
@@ -40,7 +40,7 @@ export async function get(pathOrUrl, params) {
   }
   const r = await fetch(u, { headers: headers(s), redirect: 'manual' });
   if (r.status === 401 || (r.status >= 300 && r.status < 400)) {
-    throw new SessionError('Minerva session expired. Run `npm run login` in the minerva-mcp folder again.');
+    throw new SessionError('Minerva session expired. Call the minerva_login tool, or run `npm run login` in the minerva-mcp folder.');
   }
   const text = await r.text();
   if (!r.ok) {
@@ -84,7 +84,7 @@ export async function download(pathOrUrl, fileName) {
       if (next.protocol !== 'https:') throw new Error('Refusing non-HTTPS redirect');
       if (next.host === HOST) {
         if (next.pathname.startsWith('/auth') || next.pathname === '/') {
-          throw new SessionError('Minerva session expired. Run `npm run login` again.');
+          throw new SessionError('Minerva session expired. Call the minerva_login tool, or run `npm run login`.');
         }
       } else if (DOWNLOAD_HOSTS.test(next.hostname)) {
         sendCookies = false;
@@ -94,7 +94,7 @@ export async function download(pathOrUrl, fileName) {
       u = next;
       continue;
     }
-    if (r.status === 401) throw new SessionError('Minerva session expired. Run `npm run login` again.');
+    if (r.status === 401) throw new SessionError('Minerva session expired. Call the minerva_login tool, or run `npm run login`.');
     if (!r.ok) throw new Error(`Download failed with HTTP ${r.status}`);
 
     const disp = r.headers.get('content-disposition') ?? '';
