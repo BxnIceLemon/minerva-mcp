@@ -14,7 +14,7 @@ Minerva 部分只读。Gradescope 还支持上传作业和提交重评申请，�
 - 请求只发往 `minerva.leeds.ac.uk` 和 `www.gradescope.com`。文件下载跳转到 Blackboard 的文件域名时，会去掉 cookie。
 - Minerva 只发 GET 请求。Gradescope 也只发 GET 请求，例外只有 `submit` 和 `regrade`：
   - 在 CLI 里，这两个命令都会先显示要做什么，问你 `[y/N]`，确认后才发送。加 `--dry-run` 则只显示计划，不发送。
-  - 在 MCP 里，只有设置了 `GRADESCOPE_ALLOW_WRITE=1`，写工具才会出现。即使出现了，每次调用也必须带 `confirm: true`。工具说明里要求 Claude 先给你看 dry-run 的结果，得到你的同意后才能发送。
+  - 在 MCP 里，只有设置了 `GRADESCOPE_ALLOW_WRITE=1`，写工具才会出现。即使出现了，每次调用也必须带 `confirm: true`。工具说明里要求 Agent 先给你看 dry-run 的结果，得到你的同意后才能发送。
 - 没有任何遥测。
 
 ## 使用
@@ -34,7 +34,7 @@ npm run check              # 打印你的名字和当前课程列表
 
 - **静默续期**：每次登录都会先在后台的隐藏窗口里尝试。只要 Microsoft 还记得你（“保持登录”），几秒内就能续上，不会弹出窗口。
 - **CLI**：`gradescope` 命令发现会话过期时，会先静默续期，再自动重试。如果需要你亲自登录，会先问你要不要打开登录页。
-- **Agent**：MCP 服务器提供 `minerva_login` 和 `gradescope_login` 两个工具。其他工具报告会话过期时，Claude 可以自己调用它们。需要你操作时，学校的登录页会在默认浏览器里打开，Claude 会提示你完成登录。
+- **Agent**：MCP 服务器提供 `minerva_login` 和 `gradescope_login` 两个工具。其他工具报告会话过期时，Agent（Claude、Codex 或其他 MCP 客户端）可以自己调用它们。需要你操作时，学校的登录页会在默认浏览器里打开，Agent 会提示你完成登录。
 
 ## Gradescope 命令行
 
@@ -81,6 +81,24 @@ claude mcp add minerva --scope user -- node "<本文件夹的绝对路径>/src/s
   }
 }
 ```
+
+## 注册到 Codex
+
+```bash
+codex mcp add minerva -- node "<本文件夹的绝对路径>/src/server.js"
+```
+
+也可以写进 `~/.codex/config.toml`：
+
+```toml
+[mcp_servers.minerva]
+command = "node"
+args = ["<绝对路径>/src/server.js"]
+tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 Codex 默认的 60 秒
+# env = { GRADESCOPE_ALLOW_WRITE = "1" }   # 只有要让 Codex 用 Gradescope 写工具时才加
+```
+
+改完后重启 Codex。工具在 Codex 里的用法和在 Claude 里一样。保留默认的 60 秒超时也能用，只是 `minerva_login` / `gradescope_login` 会更早返回 `waitingForUser`，调用 `gradescope_get_results` 时 `waitSeconds` 要设在 60 以内。
 
 ## MCP 工具
 
