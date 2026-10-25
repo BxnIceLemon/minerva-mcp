@@ -41,7 +41,7 @@ export function pendingLogin(service) {
  * Starts (or joins) a login and waits up to `waitSeconds` for it to finish.
  * Never opens a second window while one is already waiting for the user.
  */
-export async function agentLogin(service, { waitSeconds = 60 } = {}) {
+export async function agentLogin(service, { waitSeconds = 45 } = {}) {
   const label = LABELS[service];
   let job = jobs.get(service);
   if (!job || job.done) job = start(service);
