@@ -110,8 +110,8 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 | `minerva_list_courses` | 课程列表，可按代码或名称筛选 |
 | `minerva_list_announcements` | 某门课的公告 |
 | `minerva_list_contents` | 课程大纲 / 文件夹内容 |
-| `minerva_get_content` | 单个内容的全文和附件列表 |
-| `minerva_download_attachment` | 下载附件到 `~/Downloads/minerva` |
+| `minerva_get_content` | 单个内容的全文、附件和页面内嵌文件列表 |
+| `minerva_download_attachment` | 下载附件或内嵌文件到 `~/Downloads/minerva` |
 | `minerva_my_grades` | 成绩册：截止日期、提交状态、分数、反馈 |
 | `minerva_upcoming_deadlines` | 扫描所有当前课程，列出 N 天内的截止项 |
 | `minerva_calendar` | 日历事件 |

@@ -96,14 +96,14 @@ tool(
 
 tool(
   'minerva_get_content',
-  'Get one content item with its full text and the list of attached files.',
+  'Get one content item with its full text and the list of its files, including files embedded in the page (ids like "embedded-0").',
   { courseId, contentId: z.string() },
   minerva.getContent,
 );
 
 tool(
   'minerva_download_attachment',
-  'Download a file attached to a content item into the local Downloads/minerva folder and return its path.',
+  'Download a file from a content item (an attachment id, or an "embedded-N" id from minerva_get_content) into the local Downloads/minerva folder and return its path.',
   { courseId, contentId: z.string(), attachmentId: z.string() },
   minerva.downloadAttachment,
 );
