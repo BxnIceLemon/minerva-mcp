@@ -4,7 +4,7 @@
 
 An unofficial MCP server and command-line tool for the University of Leeds' Minerva (Blackboard Learn Ultra) and Gradescope. It follows the approach of [campus-cli](https://github.com/alejooroncoy/campus-cli). You sign in yourself in a real browser window, and the tools reuse that session. Minerva data comes from the Blackboard REST API. Gradescope data comes from the same pages and JSON its website uses, because Gradescope has no API for students.
 
-Minerva access is read-only. For Gradescope you can also upload submissions and send regrade requests. These are the only two actions that change anything.
+Minerva access is read-only. For Gradescope you can also upload and resubmit, make an earlier submission the active one, add or remove group members, and send or edit regrade requests. These are the only actions that change anything.
 
 ## Security
 
@@ -12,8 +12,8 @@ Minerva access is read-only. For Gradescope you can also upload submissions and 
 - The browser runs with a dedicated profile in `~/.minerva-mcp/browser-profile`, separate from your everyday profile. The tools never read your normal browser's cookies or saved passwords.
 - Sessions are saved in `~/.minerva-mcp/session.json` and `~/.minerva-mcp/gradescope-session.json`. None of these are inside the project folder.
 - Requests only go to `minerva.leeds.ac.uk` and `www.gradescope.com`. When a file download redirects to Blackboard's file host, the session cookie is dropped.
-- Minerva: only GET requests. Gradescope: only GET requests, except `submit` and `regrade`:
-  - In the CLI, both show what they will do and ask `[y/N]` before sending. `--dry-run` only shows the plan.
+- Minerva: only GET requests. Gradescope: only GET requests, except `submit`, `activate`, `add-member`, `remove-member` and `regrade`:
+  - In the CLI, each one shows what it will do and ask `[y/N]` before sending. `--dry-run` only shows the plan.
   - In MCP, the write tools don't exist unless you set `GRADESCOPE_ALLOW_WRITE=1`. Even then, every call needs `confirm: true`, and the agent is told to show you a dry run and get your yes first.
 - There is no telemetry.
 
@@ -34,7 +34,7 @@ Sessions expire after a few hours, but you rarely need to sign in again:
 
 - **Silent refresh.** Every login first tries a hidden window. If Microsoft still remembers you ("Stay signed in"), the session is renewed in a few seconds with no window.
 - **CLI.** When a `gradescope` command finds its session expired, it refreshes silently and retries. If you have to sign in, it asks whether to open the sign-in page.
-- **Agent.** The MCP server has `minerva_login` and `gradescope_login` tools. When a tool reports an expired session, the agent (Claude, Codex or any other MCP client) can call them itself. If you need to act, the University sign-in page opens in your default browser and the agent asks you to finish signing in.
+- **Agent.** The MCP server has `minerva_login` and `gradescope_login` tools. When a tool reports an expired session, the agent (any MCP client) can call them itself. If you need to act, the University sign-in page opens in your default browser and the agent asks you to finish signing in.
 
 ## Gradescope CLI
 
@@ -49,6 +49,10 @@ gradescope submit COMP3620 Perceptron perceptron.py --wait   # upload, then wait
 gradescope results COMP3620 Perceptron            # autograder tests with output
 gradescope comments COMP3620 Perceptron           # rubric items, comments, regrade threads
 gradescope history COMP3620 Perceptron            # every submission you've made
+gradescope activate COMP3620 Perceptron 123456789 # make an earlier submission the active one
+gradescope members COMP2850 "Team Project"         # who is in your group submission
+gradescope add-member COMP2850 "Team Project" "Ada Lovelace"   # add a classmate (name, email or id)
+gradescope remove-member COMP2850 "Team Project" me             # leave the group (or name someone)
 gradescope regrade COMP3620 "Lab 2" 1.3 -m "My answer matches part (b) of the spec"
 ```
 
@@ -64,23 +68,22 @@ gradescope regrade COMP3620 "Lab 2" 1.3 -m "My answer matches part (b) of the sp
 
 Online assignments (quizzes) can only be answered in the browser.
 
-## Add to Claude Code
+## Add to an MCP client
 
-```bash
-claude mcp add minerva --scope user -- node "<absolute path to this folder>/src/server.js"
-```
-
-To also give Claude the Gradescope write tools, add `-e GRADESCOPE_ALLOW_WRITE=1` before `--`.
-
-Or add it as JSON config, either in Claude Desktop's `claude_desktop_config.json` or in a project's `.mcp.json`:
+Most MCP clients accept a stdio server in this JSON form (in the client's MCP settings file, or a project's `.mcp.json`):
 
 ```json
 {
   "mcpServers": {
-    "minerva": { "command": "node", "args": ["<absolute path>/src/server.js"] }
+    "minerva": {
+      "command": "node",
+      "args": ["<absolute path to this folder>/src/server.js"]
+    }
   }
 }
 ```
+
+To also expose the Gradescope write tools, add `"env": { "GRADESCOPE_ALLOW_WRITE": "1" }` to the entry. Restart the client afterwards.
 
 ## Add to Codex
 
@@ -125,8 +128,12 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 | `gradescope_get_submission` | One submission in full: scores, rubric, comments, annotations, regrade threads, autograder |
 | `gradescope_get_results` | Autograder test results; `waitSeconds` polls while it runs |
 | `gradescope_get_comments` | Grader feedback and regrade requests with staff replies |
-| `gradescope_list_submissions` | Every submission to an assignment, marking the active one |
-| `gradescope_submit` | Upload a submission (only with `GRADESCOPE_ALLOW_WRITE=1`) |
+| `gradescope_list_submissions` | Every submission to an assignment, marking the active one and which can be activated |
+| `gradescope_list_group_members` | Who is in your group submission, the size limit, and whether it can still change |
+| `gradescope_submit` | Upload or resubmit (only with `GRADESCOPE_ALLOW_WRITE=1`) |
+| `gradescope_activate_submission` | Make an earlier submission the active one (only with `GRADESCOPE_ALLOW_WRITE=1`) |
+| `gradescope_add_group_members` | Add classmates to your group submission (only with `GRADESCOPE_ALLOW_WRITE=1`) |
+| `gradescope_remove_group_member` | Remove a group member, or leave the group (only with `GRADESCOPE_ALLOW_WRITE=1`) |
 | `gradescope_request_regrade` | Send or update a regrade request (only with `GRADESCOPE_ALLOW_WRITE=1`) |
 
 ## Environment variables
@@ -141,7 +148,8 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 ## Known limitations
 
 - Tested with a student account on 2026-10-16 and 2026-10-21. Courses, announcements, outlines, attachment downloads, gradebook, deadlines and calendar all work. The gradebook only has entries for graded items; items that haven't been graded yet show `graded: false`.
-- Gradescope reads were tested on real code, PDF and online assignments. `submit` and `regrade` were only tested as dry runs. The request format comes from Gradescope's own web code, but the first real upload and the first real regrade request haven't been verified yet.
+- Gradescope reads were tested on real code, PDF, online and group assignments. All write actions were only tested as dry runs, including their refusals (closed assignments, full or locked groups). The request formats come from Gradescope's own web code, but none has been sent for real yet.
+- Gradescope doesn't let students delete a submission. To "undo" one, resubmit or activate an earlier submission instead.
 - No sample with teacher annotations was available, so annotation text is extracted on a best-effort basis.
 - Minerva only knows the due date of a Gradescope assignment. For its submission status and score, use the `gradescope_*` tools.
 - In both the Minerva and Gradescope tools, `courseId` accepts a short module code such as `COMP3620` and matches the most recent course with that code.

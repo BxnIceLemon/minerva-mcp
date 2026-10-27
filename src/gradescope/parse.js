@@ -188,8 +188,91 @@ export function shapeHistory(p) {
       submissionId: s.id,
       submittedAt: s.created_at,
       active: Boolean(s.active),
+      canActivate: Boolean(s.can_activate),
+      activatePath: s.activate_path || undefined,
       score: num(s.score),
       url: s.show_path ? `${GS_BASE_URL}${s.show_path}` : undefined,
     }))
     .sort((x, y) => String(y.submittedAt).localeCompare(String(x.submittedAt)));
+}
+
+/** The people who own a submission, with names from the course roster. */
+export function shapeGroup(p) {
+  const roster = new Map((p.course_members ?? []).map((m) => [m.id, m]));
+  const me = p.current_user?.id;
+  const a = p.assignment ?? {};
+  return {
+    assignment: a.title,
+    groupSize: a.group_size ?? null,
+    canUpdate: Boolean(a.group_members_updatable),
+    members: (p.ownerships ?? [])
+      .filter((o) => o.active !== false)
+      .map((o) => ({
+        userId: o.user_id,
+        name: roster.get(o.user_id)?.name,
+        ownershipId: o.id,
+        uploader: Boolean(o.uploader),
+        you: o.user_id === me,
+      })),
+  };
+}
+
+/**
+ * Matches what the user typed ("Ada", "ada@leeds.ac.uk", "12345") against the
+ * course roster. Each query must match exactly one person.
+ */
+export function matchMembers(roster, queries) {
+  return queries.map((query) => {
+    const q = String(query).trim().toLowerCase();
+    const byId = roster.filter((m) => String(m.id) === q);
+    const byEmail = roster.filter((m) => m.email?.toLowerCase() === q);
+    const byName = roster.filter((m) => m.name?.toLowerCase() === q);
+    const partial = roster.filter((m) => m.name?.toLowerCase().includes(q) || m.email?.toLowerCase().startsWith(q));
+    const hits = [byId, byEmail, byName, partial].find((h) => h.length) ?? [];
+    if (hits.length === 1) return hits[0];
+    if (!hits.length) throw new Error(`Nobody in this course matches "${query}"`);
+    throw new Error(`"${query}" matches ${hits.length} people; use their full name or email`);
+  });
+}
+
+/** Validates adding people to a group and returns the user ids to send. */
+export function planAddMembers(group, roster, queries) {
+  if (!group.canUpdate) throw new Error(`Group members can't be changed on "${group.assignment}"`);
+  const people = matchMembers(roster, queries);
+  const current = new Set(group.members.map((m) => m.userId));
+  const adding = [...new Map(people.filter((m) => !current.has(m.id)).map((m) => [m.id, m])).values()];
+  if (!adding.length) throw new Error('Everyone named is already in the group');
+  if (group.groupSize && group.members.length + adding.length > group.groupSize) {
+    throw new Error(`Groups are limited to ${group.groupSize}; this group has ${group.members.length}`);
+  }
+  return adding.map((m) => ({ userId: m.id, name: m.name }));
+}
+
+/** Finds the group member to remove; "me" means yourself. */
+export function planRemoveMember(group, query) {
+  if (!group.canUpdate) throw new Error(`Group members can't be changed on "${group.assignment}"`);
+  const q = String(query).trim().toLowerCase();
+  const target =
+    q === 'me'
+      ? group.members.find((m) => m.you)
+      : group.members.find((m) => String(m.userId) === q || m.name?.toLowerCase() === q) ??
+        (() => {
+          const hits = group.members.filter((m) => m.name?.toLowerCase().includes(q));
+          if (hits.length > 1) throw new Error(`"${query}" matches several group members`);
+          return hits[0];
+        })();
+  if (!target) throw new Error(`"${query}" is not in this group`);
+  if (group.members.length === 1) throw new Error('A submission must keep at least one member');
+  return target;
+}
+
+/** Checks that an earlier submission can be made the active one. */
+export function planActivate(history, submissionId) {
+  const target = history.find((s) => String(s.submissionId) === String(submissionId));
+  if (!target) throw new Error(`Submission ${submissionId} is not one of yours for this assignment`);
+  if (target.active) throw new Error(`Submission ${submissionId} is already the active one`);
+  if (!target.canActivate || !target.activatePath) {
+    throw new Error(`Gradescope doesn't allow activating submission ${submissionId} (the assignment may be closed)`);
+  }
+  return target;
 }

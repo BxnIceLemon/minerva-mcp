@@ -35,7 +35,7 @@ test('registers every read tool and no write tools by default', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
   assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 12);
-  assert.equal(names.filter((n) => n.startsWith('gradescope_')).length, 10);
+  assert.equal(names.filter((n) => n.startsWith('gradescope_')).length, 11);
   assert.ok(names.includes('minerva_login'));
   assert.ok(names.includes('gradescope_login'));
   assert.ok(!names.includes('gradescope_submit'));
@@ -58,6 +58,16 @@ test('write tools appear only with GRADESCOPE_ALLOW_WRITE=1 and refuse without c
     assert.ok(submit);
     assert.equal(submit.annotations.destructiveHint, true);
     assert.ok(tools.find((t) => t.name === 'gradescope_request_regrade'));
+    for (const name of ['gradescope_activate_submission', 'gradescope_add_group_members', 'gradescope_remove_group_member']) {
+      assert.ok(tools.find((t) => t.name === name), name);
+    }
+
+    const act = await writer.callTool({
+      name: 'gradescope_activate_submission',
+      arguments: { courseId: '1', assignmentId: '2', submissionId: '3' },
+    });
+    assert.ok(act.isError);
+    assert.match(act.content[0].text, /Not sent/);
 
     const r = await writer.callTool({
       name: 'gradescope_submit',

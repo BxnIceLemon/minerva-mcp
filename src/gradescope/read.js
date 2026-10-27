@@ -3,7 +3,7 @@
 import { GS_BASE_URL, GS_SESSION_FILE } from '../config.js';
 import { loadSession } from '../session.js';
 import { html, json } from './http.js';
-import { parseCourses, parseAssignments, reactProps, shapeSubmission, shapeHistory } from './parse.js';
+import { parseCourses, parseAssignments, reactProps, shapeSubmission, shapeHistory, shapeGroup } from './parse.js';
 
 export function status() {
   const s = loadSession(GS_SESSION_FILE);
@@ -72,17 +72,32 @@ export async function getSubmission(args) {
   return shapeSubmission(p, `${GS_BASE_URL}/courses/${course}/assignments/${assignment.assignmentId}/submissions/${sub}`);
 }
 
-export async function listSubmissions(args) {
-  const { course, assignment, sub } = await resolveSubmission(args);
-  const base = `/courses/${course}/assignments/${assignment.assignmentId}/submissions/${sub}`;
+export async function submissionHistory(course, assignmentId, sub) {
+  const base = `/courses/${course}/assignments/${assignmentId}/submissions/${sub}`;
   // The viewer loads history on demand with only_keys[]=past_submissions.
   let p;
   try {
     p = await json(`${base}.json?content=react&only_keys[]=past_submissions`);
   } catch {
-    p = await submissionProps(course, assignment.assignmentId, sub);
+    p = await submissionProps(course, assignmentId, sub);
   }
-  return { assignment: assignment.title, submissions: shapeHistory(p) };
+  return shapeHistory(p);
+}
+
+export async function listSubmissions(args) {
+  const { course, assignment, sub } = await resolveSubmission(args);
+  const history = await submissionHistory(course, assignment.assignmentId, sub);
+  return {
+    assignment: assignment.title,
+    submissions: history.map(({ activatePath, ...s }) => s),
+  };
+}
+
+/** Who owns your submission, and whether the group can still be changed. */
+export async function listGroupMembers(args) {
+  const { course, assignment, sub } = await resolveSubmission(args);
+  const p = await submissionProps(course, assignment.assignmentId, sub);
+  return { submissionId: String(sub), ...shapeGroup(p) };
 }
 
 /** Autograder output only. */
