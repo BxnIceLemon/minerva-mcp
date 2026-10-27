@@ -2,6 +2,7 @@
 import { BASE_URL } from './config.js';
 import { get, getAll, download } from './client.js';
 import { loadSession } from './session.js';
+import { parseEmbeddedFiles } from './embedded.js';
 
 const V1 = '/learn/api/public/v1';
 const V2 = '/learn/api/public/v2';
@@ -100,6 +101,7 @@ export async function listAnnouncements({ courseId, limit = 20 }) {
 }
 
 function shapeContent(c, courseId) {
+  const embedded = parseEmbeddedFiles(c.body);
   return {
     id: c.id,
     title: c.title,
@@ -110,6 +112,7 @@ function shapeContent(c, courseId) {
     modified: c.modified,
     description: text(c.description, 500),
     body: text(c.body, 800),
+    embeddedFiles: embedded.length ? embedded.map((f) => f.fileName) : undefined,
     link: c.contentHandler?.url,
     gradebookColumnId: c.contentHandler?.gradeColumnId,
     url: `${BASE_URL}/ultra/courses/${courseId}/outline`,
@@ -123,22 +126,56 @@ export async function listContents({ courseId, contentId }) {
   return rows.map((c) => shapeContent(c, decodeURIComponent(cid)));
 }
 
+// Ultra keeps a folder's own page text in hidden "ultraDocumentBody" children,
+// so an item's readable body is its own plus theirs.
+async function documentBodies(base, c) {
+  const bodies = [{ contentId: c.id, body: c.body }];
+  if (c.hasChildren) {
+    const kids = await getAll(`${base}/children`).catch(() => []);
+    for (const k of kids) if (k.title === 'ultraDocumentBody') bodies.push({ contentId: k.id, body: k.body });
+  }
+  return bodies;
+}
+
+const embeddedFilesOf = (bodies) =>
+  bodies.flatMap((b) => parseEmbeddedFiles(b.body).map((f) => ({ ...f, contentId: b.contentId })));
+
 export async function getContent({ courseId, contentId }) {
   const cid = await course(courseId);
   const base = `${V1}/courses/${cid}/contents/${encodeURIComponent(contentId)}`;
   const c = await get(base);
+  const bodies = await documentBodies(base, c);
   const out = shapeContent(c, decodeURIComponent(cid));
-  out.body = text(c.body, 20000);
-  out.attachments = await getAll(`${base}/attachments`)
+  out.body = text(bodies.map((b) => b.body).filter(Boolean).join('\n'), 20000);
+  delete out.embeddedFiles;
+  const attached = await getAll(`${base}/attachments`)
     .then((rows) => rows.map((a) => ({ id: a.id, fileName: a.fileName, mimeType: a.mimeType })))
     .catch(() => []);
+  // Signed URLs expire, so embedded files get stable ids and are re-resolved on download.
+  const embedded = embeddedFilesOf(bodies).map((f, i) => ({
+    id: `embedded-${i}`,
+    fileName: f.fileName,
+    mimeType: f.mimeType,
+    embedded: true,
+  }));
+  out.attachments = [...attached, ...embedded];
   return out;
 }
 
+const EMBEDDED_ID = /^embedded-(\d+)$/;
+
 export async function downloadAttachment({ courseId, contentId, attachmentId }) {
-  const base = `${V1}/courses/${await course(courseId)}/contents/${encodeURIComponent(contentId)}/attachments/${encodeURIComponent(attachmentId)}`;
-  const meta = await get(base).catch(() => null);
-  return download(`${base}/download`, meta?.fileName);
+  const base = `${V1}/courses/${await course(courseId)}/contents/${encodeURIComponent(contentId)}`;
+  const m = EMBEDDED_ID.exec(attachmentId);
+  if (m) {
+    const c = await get(base);
+    const file = embeddedFilesOf(await documentBodies(base, c))[Number(m[1])];
+    if (!file) throw new Error(`No embedded file ${attachmentId} in this content item. Call minerva_get_content to list its files.`);
+    return download(file.url, file.fileName);
+  }
+  const att = `${base}/attachments/${encodeURIComponent(attachmentId)}`;
+  const meta = await get(att).catch(() => null);
+  return download(`${att}/download`, meta?.fileName);
 }
 
 async function gradebook(courseId) {

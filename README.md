@@ -110,8 +110,8 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 | `minerva_list_courses` | List your courses, optionally filtered by code or name |
 | `minerva_list_announcements` | Announcements for a course |
 | `minerva_list_contents` | Course outline and folder contents |
-| `minerva_get_content` | Full text of one content item, plus its attachments |
-| `minerva_download_attachment` | Download an attachment to `~/Downloads/minerva` |
+| `minerva_get_content` | Full text of one content item, plus its attachments and files embedded in the page |
+| `minerva_download_attachment` | Download an attachment or embedded file to `~/Downloads/minerva` |
 | `minerva_my_grades` | Gradebook: due dates, submission status, scores and feedback |
 | `minerva_upcoming_deadlines` | Items due in the next N days across all current courses |
 | `minerva_calendar` | Calendar events |
