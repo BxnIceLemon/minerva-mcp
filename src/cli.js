@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Gradescope command-line client. Reads work like the MCP tools; `submit` and
-// `regrade` show what they will do and ask before sending anything.
+// Gradescope command-line client. Reads work like the MCP tools; every action
+// that changes something shows what it will do and asks before sending.
 import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline/promises';
 import * as gs from './gradescope.js';
@@ -25,12 +25,19 @@ Submissions
   results <course> <assignment> [--wait]  Autograder test results (--wait polls until done)
   comments <course> <assignment>          Rubric items, grader comments and regrade threads
   history <course> <assignment>           All your submissions to an assignment
+  members <course> <assignment>           Who is in your group submission
 
 Actions (ask for confirmation)
   submit <course> <assignment> <file...>  Upload files (code, PDF or document assignments)
       [--leaderboard NAME] [--wait] [--dry-run] [--yes]
+  activate <course> <assignment> <submission-id>
+      Make an earlier submission the active one [--dry-run] [--yes]
   regrade <course> <assignment> <question> -m TEXT
       Ask for question <question> (e.g. 2.1) to be regraded [--dry-run] [--yes]
+  add-member <course> <assignment> <person...>
+      Add classmates (name, email or id) to your group [--dry-run] [--yes]
+  remove-member <course> <assignment> <person|me>
+      Remove someone from your group, or leave it with "me" [--dry-run] [--yes]
 
 Options
   --submission ID   Use a specific submission instead of your active one
@@ -85,6 +92,19 @@ async function confirm(question, yes) {
   const answer = await rl.question(`${question} [y/N] `);
   rl.close();
   return /^y(es)?$/i.test(answer.trim());
+}
+
+// Shared flow for write actions: build the plan (a dry run), show it, ask,
+// then send. --dry-run stops after showing; --json prints plans and results.
+async function confirmed(o, planFn, runFn, { show, question, done }) {
+  const plan = await planFn();
+  if (o.json && o['dry-run']) return plan;
+  if (!o.json) show(plan);
+  if (o['dry-run']) return;
+  if (!(await confirm(question, o.yes))) return console.log('Cancelled.');
+  const r = await runFn();
+  if (o.json) return r;
+  console.log(done(r));
 }
 
 function printSubmission(s) {
@@ -226,10 +246,66 @@ const commands = {
     console.log(r.assignment);
     console.log(
       table(
-        r.submissions.map((s) => ({ id: s.submissionId, submitted: fmtDate(s.submittedAt), active: s.active ? 'yes' : '', score: fmtScore(s.score) })),
+        r.submissions.map((s) => ({
+          id: s.submissionId,
+          submitted: fmtDate(s.submittedAt),
+          active: s.active ? 'yes' : s.canActivate ? 'can activate' : '',
+          score: fmtScore(s.score),
+        })),
         ['id', 'submitted', 'active', 'score'],
       ),
     );
+  },
+
+  async members(a, o) {
+    need(a, 2, 'members <course> <assignment>');
+    const r = await gs.listGroupMembers({ courseId: a[0], assignmentId: a[1], submissionId: o.submission });
+    if (o.json) return r;
+    console.log(`${r.assignment}  (submission ${r.submissionId})`);
+    console.log(`Group size limit: ${r.groupSize ?? 'none'}; members ${r.canUpdate ? 'can' : "can't"} be changed`);
+    for (const m of r.members) console.log(`  ${m.name ?? m.userId}${m.you ? ' (you)' : ''}${m.uploader ? ' [uploader]' : ''}`);
+  },
+
+  async activate(a, o) {
+    need(a, 3, 'activate <course> <assignment> <submission-id> [--dry-run] [--yes]');
+    const args = { courseId: a[0], assignmentId: a[1], submissionId: a[2] };
+    return confirmed(o, () => gs.activateSubmission({ ...args, dryRun: true }), () => gs.activateSubmission(args), {
+      show: (p) => {
+        console.log(p.assignment);
+        console.log(`Make active: ${p.activate.submissionId} from ${fmtDate(p.activate.submittedAt)} (score ${fmtScore(p.activate.score)})`);
+        if (p.replaces) console.log(`Currently active: ${p.replaces.submissionId} from ${fmtDate(p.replaces.submittedAt)} (score ${fmtScore(p.replaces.score)})`);
+      },
+      question: 'Make this submission the active one?',
+      done: (r) => `Submission ${r.activate.submissionId} is now active: ${r.url}`,
+    });
+  },
+
+  async 'add-member'(a, o) {
+    need(a, 3, 'add-member <course> <assignment> <person...> [--dry-run] [--yes]');
+    const args = { courseId: a[0], assignmentId: a[1], members: a.slice(2), submissionId: o.submission };
+    return confirmed(o, () => gs.addGroupMembers({ ...args, dryRun: true }), () => gs.addGroupMembers(args), {
+      show: (p) => {
+        console.log(`${p.assignment}  (group size limit: ${p.groupSize ?? 'none'})`);
+        console.log(`Current members: ${p.currentMembers.join(', ')}`);
+        console.log(`Adding: ${p.adding.join(', ')}`);
+      },
+      question: 'Add them to your group submission?',
+      done: (r) => `Added ${r.adding.join(', ')}.`,
+    });
+  },
+
+  async 'remove-member'(a, o) {
+    need(a, 3, 'remove-member <course> <assignment> <person|me> [--dry-run] [--yes]');
+    const args = { courseId: a[0], assignmentId: a[1], member: a.slice(2).join(' '), submissionId: o.submission };
+    return confirmed(o, () => gs.removeGroupMember({ ...args, dryRun: true }), () => gs.removeGroupMember(args), {
+      show: (p) => {
+        console.log(p.assignment);
+        console.log(p.leavingGroup ? 'You will leave this group and lose access to its submission.' : `Removing: ${p.removing}`);
+        console.log(`Remaining: ${p.remainingMembers.join(', ')}`);
+      },
+      question: 'Go ahead?',
+      done: (r) => (r.leavingGroup ? 'You left the group.' : `Removed ${r.removing}.`),
+    });
   },
 
   async submit(a, o) {

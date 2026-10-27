@@ -12,7 +12,7 @@ Thanks for helping. A few rules keep this project safe for everyone who signs in
 
 ## Ground rules
 
-- **Writes stay narrow.** Minerva is read-only. On Gradescope the only actions that change anything are `submit` and `regrade` (`src/gradescope/write.js`). A new write action needs a strong reason, and it must:
+- **Writes stay narrow.** Minerva is read-only. On Gradescope the only actions that change anything are upload/resubmit, activating an earlier submission, adding or removing group members, and regrade requests, all in `src/gradescope/write.js`. A new write action needs a strong reason, and it must:
   - support a dry run
   - ask for confirmation in the CLI
   - in MCP, be registered only with `GRADESCOPE_ALLOW_WRITE=1` and require `confirm: true`

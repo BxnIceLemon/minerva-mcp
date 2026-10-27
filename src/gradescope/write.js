@@ -1,12 +1,13 @@
-// The only two actions that change anything on Gradescope: uploading a
-// submission and creating or updating a regrade request. Both validate
-// everything first and support dryRun, which returns the plan without sending.
+// Every action that changes anything on Gradescope lives here: uploading a
+// submission, making an earlier submission active, adding or removing group
+// members, and creating or updating a regrade request. Each one validates
+// everything first and supports dryRun, which returns the plan without sending.
 import fs from 'node:fs';
 import path from 'node:path';
 import { GS_BASE_URL } from '../config.js';
 import { request, csrfToken } from './http.js';
-import { findAssignment, resolveSubmission, submissionProps } from './read.js';
-import { shapeSubmission } from './parse.js';
+import { findAssignment, resolveSubmission, submissionProps, submissionHistory } from './read.js';
+import { shapeSubmission, shapeGroup, planActivate, planAddMembers, planRemoveMember } from './parse.js';
 
 const MAX_FILE_BYTES = 100 * 1024 * 1024; // Gradescope's upload limit per file
 
@@ -187,4 +188,102 @@ export async function requestRegrade({ courseId, assignmentId, submissionId, que
   }
   const saved = await res.json().catch(() => ({}));
   return { sent: true, ...plan, regradeRequestId: saved.id, url: s.url };
+}
+
+async function failure(res, what) {
+  const detail = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300);
+  if (res.status === 403) return new Error(`Gradescope refused to ${what} (not allowed for this assignment)`);
+  return new Error(`Could not ${what} (HTTP ${res.status})${detail ? `: ${detail}` : ''}`);
+}
+
+const XHR = (token) => ({ 'X-CSRF-Token': token, 'X-Requested-With': 'XMLHttpRequest' });
+
+/**
+ * Makes one of your earlier submissions the active (graded) one, like the
+ * "Activate" button in the submission history.
+ */
+export async function activateSubmission({ courseId, assignmentId, submissionId, dryRun = false }) {
+  if (!submissionId) throw new Error('Give the id of the submission to make active (see the submission history)');
+  const { course, assignment, sub } = await resolveSubmission({ courseId, assignmentId });
+  const history = await submissionHistory(course, assignment.assignmentId, sub);
+  const target = planActivate(history, submissionId);
+  const current = history.find((s) => s.active);
+
+  const plan = {
+    assignment: assignment.title,
+    activate: { submissionId: String(target.submissionId), submittedAt: target.submittedAt, score: target.score },
+    replaces: current ? { submissionId: String(current.submissionId), submittedAt: current.submittedAt, score: current.score } : null,
+  };
+  if (dryRun) return { dryRun: true, ...plan };
+
+  const token = await csrfToken(`/courses/${course}/assignments/${assignment.assignmentId}/submissions/${sub}`);
+  const res = await request('POST', target.activatePath, {
+    body: new URLSearchParams({ authenticity_token: token }),
+    headers: { 'X-CSRF-Token': token },
+  });
+  if (!(res.ok || (res.status >= 300 && res.status < 400))) throw await failure(res, 'activate the submission');
+
+  const after = await submissionHistory(course, assignment.assignmentId, target.submissionId);
+  const active = after.find((s) => s.active);
+  if (String(active?.submissionId) !== String(target.submissionId)) {
+    throw new Error('Gradescope accepted the request, but the submission is not shown as active. Check it in the browser.');
+  }
+  return { activated: true, ...plan, url: target.url };
+}
+
+async function groupContext({ courseId, assignmentId, submissionId }) {
+  const { course, assignment, sub } = await resolveSubmission({ courseId, assignmentId, submissionId });
+  const subPath = `/courses/${course}/assignments/${assignment.assignmentId}/submissions/${sub}`;
+  const p = await submissionProps(course, assignment.assignmentId, sub);
+  return { subPath, p, group: shapeGroup(p) };
+}
+
+/** Adds classmates (by name, email or id) to your group submission. */
+export async function addGroupMembers({ courseId, assignmentId, submissionId, members, dryRun = false }) {
+  if (!members?.length) throw new Error('Name at least one person to add');
+  const { subPath, p, group } = await groupContext({ courseId, assignmentId, submissionId });
+  const adding = planAddMembers(group, p.course_members ?? [], members);
+  const plan = {
+    assignment: group.assignment,
+    groupSize: group.groupSize,
+    currentMembers: group.members.map((m) => m.name ?? m.userId),
+    adding: adding.map((m) => m.name ?? m.userId),
+  };
+  if (dryRun) return { dryRun: true, ...plan };
+
+  const token = await csrfToken(subPath);
+  const body = new URLSearchParams();
+  for (const m of adding) body.append('user_ids[]', String(m.userId));
+  const res = await request('POST', p.paths?.many_ownerships_path ?? `${subPath}/ownerships/many`, {
+    body,
+    accept: 'application/json',
+    headers: XHR(token),
+  });
+  if (!res.ok) throw await failure(res, 'add group members');
+  return { added: true, ...plan };
+}
+
+/**
+ * Removes one member from your group submission. Removing "me" leaves the
+ * group: you lose access to that submission.
+ */
+export async function removeGroupMember({ courseId, assignmentId, submissionId, member, dryRun = false }) {
+  if (!member) throw new Error('Name the group member to remove, or "me" to leave the group');
+  const { subPath, p, group } = await groupContext({ courseId, assignmentId, submissionId });
+  const target = planRemoveMember(group, member);
+  const plan = {
+    assignment: group.assignment,
+    removing: target.name ?? target.userId,
+    leavingGroup: target.you,
+    remainingMembers: group.members.filter((m) => m !== target).map((m) => m.name ?? m.userId),
+  };
+  if (dryRun) return { dryRun: true, ...plan };
+
+  const token = await csrfToken(subPath);
+  const res = await request('DELETE', `${p.paths?.ownerships_path ?? `${subPath}/ownerships`}/${target.ownershipId}`, {
+    accept: 'application/json',
+    headers: XHR(token),
+  });
+  if (!res.ok) throw await failure(res, 'remove the group member');
+  return { removed: true, ...plan };
 }
