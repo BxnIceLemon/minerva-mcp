@@ -8,6 +8,7 @@ import { GS_BASE_URL } from '../config.js';
 import { request, csrfToken } from './http.js';
 import { findAssignment, resolveSubmission, submissionProps, submissionHistory } from './read.js';
 import { shapeSubmission, shapeGroup, planActivate, planAddMembers, planRemoveMember } from './parse.js';
+import { expandZip } from './zip.js';
 
 const MAX_FILE_BYTES = 100 * 1024 * 1024; // Gradescope's upload limit per file
 
@@ -35,13 +36,13 @@ async function submissionTarget(courseId, assignmentId) {
   };
 }
 
-function checkFiles(format, files) {
+export function checkFiles(format, files, { unzip = true } = {}) {
   if (!files?.length) throw new Error('No files given');
   const list = files.map((f) => {
     const full = path.resolve(f);
     if (!fs.existsSync(full)) throw new Error(`File not found: ${f}`);
     const st = fs.statSync(full);
-    if (!st.isFile()) throw new Error(`Not a file: ${f} (zip a folder first; Gradescope unzips code uploads)`);
+    if (!st.isFile()) throw new Error(`Not a file: ${f} (zip a folder first; it is unpacked before upload)`);
     if (st.size > MAX_FILE_BYTES) throw new Error(`${f} is larger than Gradescope's 100 MB limit`);
     return { path: full, name: path.basename(full), bytes: st.size };
   });
@@ -50,7 +51,26 @@ function checkFiles(format, files) {
   } else if (format === 'typed_document') {
     if (list.length !== 1) throw new Error('This assignment takes exactly one file');
   }
-  return list;
+  if (format !== 'code' || !unzip) return list;
+
+  // Like the web uploader: a .zip is unpacked and its files are uploaded one
+  // by one, keeping their paths inside the archive.
+  const out = [];
+  for (const f of list) {
+    if (/\.zip$/i.test(f.name)) {
+      for (const e of expandZip(fs.readFileSync(f.path), f.name)) out.push({ ...e, from: f.name });
+    } else {
+      out.push(f);
+    }
+  }
+  const seen = new Map();
+  for (const f of out) {
+    if (f.bytes > MAX_FILE_BYTES) throw new Error(`${f.name} is larger than Gradescope's 100 MB limit`);
+    const prev = seen.get(f.name);
+    if (prev) throw new Error(`Two files would both upload as "${f.name}" (${prev.from ?? prev.path} and ${f.from ?? f.path})`);
+    seen.set(f.name, f);
+  }
+  return out;
 }
 
 function submissionIdFrom(url) {
@@ -62,7 +82,7 @@ function submissionIdFrom(url) {
  * active one). Supports code, PDF and typed-document assignments. Online
  * quizzes can only be answered in the browser.
  */
-export async function submit({ courseId, assignmentId, files, leaderboardName, dryRun = false }) {
+export async function submit({ courseId, assignmentId, files, leaderboardName, unzip = true, dryRun = false }) {
   const t = await submissionTarget(courseId, assignmentId);
   const { course, assignment, format } = t;
   if (format === 'online') {
@@ -76,7 +96,7 @@ export async function submit({ courseId, assignmentId, files, leaderboardName, d
   if (format === 'code' && t.leaderboard && !leaderboardName) {
     throw new Error('This assignment has a leaderboard; give a leaderboard name');
   }
-  const list = checkFiles(format, files);
+  const list = checkFiles(format, files, { unzip });
 
   const plan = {
     course,
@@ -85,7 +105,8 @@ export async function submit({ courseId, assignmentId, files, leaderboardName, d
     format,
     due: assignment.due,
     replacesSubmission: assignment.submissionId ?? null,
-    files: list.map(({ name, bytes }) => ({ name, bytes })),
+    files: list.map(({ name, bytes, from }) => ({ name, bytes, from })),
+    unzipped: list.some((f) => f.from) ? [...new Set(list.filter((f) => f.from).map((f) => f.from))] : undefined,
     leaderboardName: format === 'code' ? leaderboardName : undefined,
     postUrl: `${GS_BASE_URL}${t.postUrl}`,
   };
@@ -98,7 +119,10 @@ export async function submit({ courseId, assignmentId, files, leaderboardName, d
   if (format === 'code') {
     form.append('submission[method]', 'upload');
     if (leaderboardName) form.append('submission[leaderboard_name]', leaderboardName);
-    for (const f of list) form.append('submission[files][]', await fs.openAsBlob(f.path), f.name);
+    for (const f of list) {
+      const blob = f.data ? new Blob([f.data], { type: 'application/octet-stream' }) : await fs.openAsBlob(f.path);
+      form.append('submission[files][]', blob, f.name);
+    }
   } else {
     const field = format === 'typed_document' ? 'file' : 'pdf_attachment';
     form.append(field, await fs.openAsBlob(list[0].path), list[0].name);

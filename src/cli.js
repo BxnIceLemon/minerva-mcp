@@ -30,6 +30,8 @@ Submissions
 Actions (ask for confirmation)
   submit <course> <assignment> <file...>  Upload files (code, PDF or document assignments)
       [--leaderboard NAME] [--wait] [--dry-run] [--yes]
+      A .zip is unpacked and its files uploaded one by one, like the website
+      does; --keep-zip uploads the .zip itself instead.
   activate <course> <assignment> <submission-id>
       Make an earlier submission the active one [--dry-run] [--yes]
   regrade <course> <assignment> <question> -m TEXT
@@ -53,6 +55,7 @@ const options = {
   days: { type: 'string' },
   submission: { type: 'string' },
   leaderboard: { type: 'string' },
+  'keep-zip': { type: 'boolean' },
   message: { type: 'string', short: 'm' },
   timeout: { type: 'string' },
   wait: { type: 'boolean' },
@@ -309,15 +312,17 @@ const commands = {
   },
 
   async submit(a, o) {
-    need(a, 3, 'submit <course> <assignment> <file...> [--leaderboard NAME] [--wait] [--dry-run] [--yes]');
-    const args = { courseId: a[0], assignmentId: a[1], files: a.slice(2), leaderboardName: o.leaderboard };
+    need(a, 3, 'submit <course> <assignment> <file...> [--leaderboard NAME] [--keep-zip] [--wait] [--dry-run] [--yes]');
+    const args = { courseId: a[0], assignmentId: a[1], files: a.slice(2), leaderboardName: o.leaderboard, unzip: !o['keep-zip'] };
     const plan = await gs.submit({ ...args, dryRun: true });
     if (o.json && o['dry-run']) return plan;
     if (!o.json) {
       console.log(`Assignment: ${plan.assignment} (${plan.format})`);
       console.log(`Due: ${fmtDate(plan.due)}`);
       console.log(plan.replacesSubmission ? `Replaces your active submission ${plan.replacesSubmission}` : 'First submission');
-      for (const f of plan.files) console.log(`  ${f.name}  ${f.bytes} bytes`);
+      if (plan.unzipped) console.log(`Unpacked ${plan.unzipped.join(', ')}; uploading ${plan.files.length} files:`);
+      for (const f of plan.files.slice(0, 50)) console.log(`  ${f.name}  ${f.bytes} bytes`);
+      if (plan.files.length > 50) console.log(`  … and ${plan.files.length - 50} more`);
       if (plan.leaderboardName) console.log(`Leaderboard name: ${plan.leaderboardName}`);
     }
     if (o['dry-run']) return;
