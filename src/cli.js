@@ -6,12 +6,15 @@ import { createInterface } from 'node:readline/promises';
 import * as gs from './gradescope.js';
 import { SessionError } from './client.js';
 import { login } from './auth.js';
-import { runLoginCli } from './login-cli.js';
+import { runLoginCli, loginOptions, LOGIN_OPTIONS } from './login-cli.js';
 
 const HELP = `Usage: gradescope <command> [options]
 
 Account
   login                                   Sign in to Gradescope in a browser window
+      [--terminal] [--user NAME] [--mfa push|passcode|sms|call]
+      --terminal asks for your username, password and Duo in this terminal
+      instead (the default when there is no display)
   status                                  Show whether you are signed in
 
 Browse
@@ -51,6 +54,7 @@ Options
 assignment id or a unique part of its title ("Perceptron").`;
 
 const options = {
+  ...LOGIN_OPTIONS,
   search: { type: 'string' },
   days: { type: 'string' },
   submission: { type: 'string' },
@@ -135,8 +139,8 @@ function printAutograder(ag) {
 }
 
 const commands = {
-  async login() {
-    if ((await runLoginCli('gradescope')) !== 0) throw new Error('Login was not completed');
+  async login(_, o) {
+    if ((await runLoginCli('gradescope', loginOptions(o))) !== 0) throw new Error('Login was not completed');
   },
 
   async status(_, o) {
@@ -383,7 +387,7 @@ async function main(argv) {
     try {
       return await runOnce();
     } catch (e) {
-      if (!(e instanceof SessionError) || cmd === 'login' || !(await recoverSession())) throw e;
+      if (!(e instanceof SessionError) || cmd === 'login' || !(await recoverSession(parsed.values))) throw e;
       return await runOnce();
     }
   } catch (e) {
@@ -393,15 +397,17 @@ async function main(argv) {
 }
 
 // On an expired session: refresh silently, and if that isn't enough and we're
-// in a terminal, offer to open the sign-in page. Returns true to retry.
-async function recoverSession() {
+// in a terminal, offer to sign in again. Returns true to retry.
+async function recoverSession(o) {
   if (process.env.MINERVA_NO_AUTO_LOGIN === '1') return false;
   process.stderr.write('Gradescope session expired; refreshing…\n');
   const quiet = await login('gradescope', { interactive: false }).catch(() => ({ signedIn: false }));
   if (quiet.signedIn) return true;
   if (!process.stdin.isTTY) return false;
-  if (!(await confirm('Open the Gradescope sign-in page in your browser?', false))) return false;
-  return (await runLoginCli('gradescope', { silent: false })) === 0;
+  const opts = { ...loginOptions(o), silent: false };
+  const where = opts.terminal ? 'here in the terminal' : 'in your browser';
+  if (!(await confirm(`Sign in to Gradescope again ${where}?`, false))) return false;
+  return (await runLoginCli('gradescope', opts)) === 0;
 }
 
 process.exitCode = await main(process.argv.slice(2));

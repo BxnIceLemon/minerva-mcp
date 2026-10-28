@@ -1,13 +1,17 @@
 // Sign-in flows shared by the CLIs and the MCP server. Each login first tries
 // a silent refresh in a hidden window (the browser profile usually still has
 // Microsoft's "Stay signed in" state), and only opens a visible window in the
-// default browser when the user has to act. Passwords and MFA are always typed
-// by the user in the browser; this code never sees them.
+// default browser when the user has to act. Passwords and MFA are typed by the
+// user in the browser, except in the opt-in terminal sign-in (src/sso.js),
+// where the user types them in the terminal and they go straight into
+// Microsoft's and Duo's own forms in a hidden window.
 import { BASE_URL, SESSION_FILE, GS_BASE_URL, GS_HOST, GS_SESSION_FILE, GS_SSO_PATH } from './config.js';
 import { saveSession, minervaCookies, cookiesFor, bbRouterField } from './session.js';
-import { launch, waitFor, plainCookies, chooseBrowser, LOGIN_TIMEOUT_MS } from './browser.js';
+import { launch, waitFor, plainCookies, chooseBrowser, hasDisplay, LOGIN_TIMEOUT_MS } from './browser.js';
+import { driveSignIn } from './sso.js';
 
 const SILENT_TIMEOUT_MS = 15 * 1000;
+export const TERMINAL_COMMAND = { minerva: 'npm run login -- --terminal', gradescope: 'gradescope login --terminal' };
 const FALLBACK_TTL_MS = 3 * 60 * 60 * 1000;
 
 const services = {
@@ -59,16 +63,21 @@ const services = {
   },
 };
 
-async function attempt(svc, { headless, timeoutMs, onOpen }) {
+async function attempt(svc, { headless, timeoutMs, onOpen, terminal }) {
   const { context, browser } = await launch({ headless });
+  const stop = new AbortController();
+  let failed;
   try {
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(svc.startUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
     if (!headless) onOpen?.(browser);
-    const result = await waitFor(context, () => svc.check(context), timeoutMs);
+    if (terminal) driveSignIn(page, terminal.io, { ...terminal, signal: stop.signal }).catch((e) => (failed = e));
+    const result = await waitFor(context, () => svc.check(context), timeoutMs, () => failed);
+    if (failed) throw failed;
     if (!result) return { ok: false, browser };
     return { ok: true, browser, saved: await svc.save(context, result) };
   } finally {
+    stop.abort();
     await context.close().catch(() => {});
   }
 }
@@ -77,10 +86,12 @@ async function attempt(svc, { headless, timeoutMs, onOpen }) {
  * Signs in to "minerva" or "gradescope".
  * - silent: try a hidden window first (default true)
  * - interactive: open a visible window if silent fails (default true)
+ * - terminal: { io, username, mfa } to sign in from the terminal in a hidden
+ *   window instead of a visible one (see src/sso.js)
  * Resolves to { signedIn, mode, browser, ... }; never throws for a login that
  * simply wasn't completed.
  */
-export async function login(service, { silent = true, interactive = true, timeoutMs = LOGIN_TIMEOUT_MS, onOpen } = {}) {
+export async function login(service, { silent = true, interactive = true, timeoutMs = LOGIN_TIMEOUT_MS, onOpen, terminal } = {}) {
   const svc = services[service];
   if (!svc) throw new Error(`Unknown service "${service}"`);
   const chosen = chooseBrowser();
@@ -92,6 +103,20 @@ export async function login(service, { silent = true, interactive = true, timeou
   }
   if (!interactive) {
     return { signedIn: false, service, needsUser: true, browser: browserInfo };
+  }
+  if (terminal) {
+    const r = await attempt(svc, { headless: true, timeoutMs, terminal });
+    if (r.ok) return { signedIn: true, service, mode: 'terminal', browser: browserInfo, ...r.saved };
+    return { signedIn: false, service, mode: 'terminal', browser: browserInfo, reason: 'Sign-in was not completed in time.' };
+  }
+  if (!hasDisplay()) {
+    return {
+      signedIn: false,
+      service,
+      needsUser: true,
+      browser: browserInfo,
+      reason: `There is no display to open a sign-in window on. Sign in from a terminal instead: \`${TERMINAL_COMMAND[service]}\`.`,
+    };
   }
   const r = await attempt(svc, { headless: false, timeoutMs, onOpen });
   if (r.ok) return { signedIn: true, service, mode: 'interactive', browser: browserInfo, ...r.saved };

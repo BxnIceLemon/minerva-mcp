@@ -61,7 +61,8 @@ for (const [service, label] of [
     `Sign in to ${label} or refresh an expired session. Call this whenever a ${label} tool says the session expired or you are not signed in. ` +
       'It first refreshes silently (a few seconds, no window). If the user has to sign in, it opens the University sign-in page in their default browser: ' +
       'tell the user a browser window opened and ask them to sign in there. If the result says waitingForUser, call again after the user says they are done. ' +
-      'Never ask the user for their password; they type it in the browser.',
+      'On a machine with no display it returns the terminal command the user should run to sign in there. ' +
+      'Never ask the user for their password; they type it in the browser or their own terminal.',
     { waitSeconds },
     ({ waitSeconds: w }) => agentLogin(service, { waitSeconds: w }),
     { readOnlyHint: true, openWorldHint: true },
