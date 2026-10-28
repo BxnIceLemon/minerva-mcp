@@ -9,6 +9,7 @@ Minerva access is read-only. For Gradescope you can also upload and resubmit, ma
 ## Security
 
 - Sign-in happens in your system default browser (Edge, Chrome, Brave and other Chromium browsers). You type your password and MFA code there yourself; the code never sees them.
+- The optional terminal sign-in (`--terminal`) is the one exception: you type your password in the terminal and it is filled straight into Microsoft's own form in a hidden window. It is never saved, logged or sent anywhere else, and the MCP tools never accept a password.
 - The browser runs with a dedicated profile in `~/.minerva-mcp/browser-profile`, separate from your everyday profile. The tools never read your normal browser's cookies or saved passwords.
 - Sessions are saved in `~/.minerva-mcp/session.json` and `~/.minerva-mcp/gradescope-session.json`. None of these are inside the project folder.
 - Requests only go to `minerva.leeds.ac.uk` and `www.gradescope.com`. When a file download redirects to Blackboard's file host, the session cookie is dropped.
@@ -34,7 +35,20 @@ Sessions expire after a few hours, but you rarely need to sign in again:
 
 - **Silent refresh.** Every login first tries a hidden window. If Microsoft still remembers you ("Stay signed in"), the session is renewed in a few seconds with no window.
 - **CLI.** When a `gradescope` command finds its session expired, it refreshes silently and retries. If you have to sign in, it asks whether to open the sign-in page.
+- **Terminal sign-in.** On a server or over SSH, sign in without a window: see below.
 - **Agent.** The MCP server has `minerva_login` and `gradescope_login` tools. When a tool reports an expired session, the agent (any MCP client) can call them itself. If you need to act, the University sign-in page opens in your default browser and the agent asks you to finish signing in.
+
+### Signing in from a terminal
+
+```bash
+npm run login -- --terminal                 # Minerva
+gradescope login --terminal                 # Gradescope
+npm run login -- --terminal --mfa passcode  # type a Duo passcode instead of approving a push
+```
+
+The browser runs hidden. You're asked for your University username (`ab12cd` becomes `ab12cd@leeds.ac.uk`) and password, then Duo sends a push to your phone; if Duo shows a number, the terminal tells you which one to enter in Duo Mobile. `--mfa` chooses `push` (default), `passcode` (Duo Mobile or hardware token), `sms` or `call`. If a push times out you can retry or switch to a passcode. It answers "Stay signed in" and Duo's "Is this your device?" with yes, so later logins usually refresh silently.
+
+Terminal sign-in is used automatically on Linux when there is no display. Without Edge or Chrome installed, run `npx playwright-core install chromium` once in this folder.
 
 ## Gradescope CLI
 
@@ -144,6 +158,8 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 - `GRADESCOPE_ALLOW_WRITE`: set to `1` to register the MCP write tools. The CLI doesn't need it.
 - `GRADESCOPE_SSO_PATH`: Gradescope's school sign-in path. Defaults to the University of Leeds; set it to an empty value to use the plain Gradescope login page.
 - `MINERVA_NO_AUTO_LOGIN`: set to `1` to stop the CLI from refreshing an expired session by itself.
+- `MINERVA_USERNAME`: the username terminal sign-in fills in, instead of asking. Same as `--user`.
+- `MINERVA_MFA`: the default `--mfa` method for terminal sign-in.
 
 ## Known limitations
 

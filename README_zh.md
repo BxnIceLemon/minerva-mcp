@@ -9,6 +9,7 @@ Minerva 部分只读。Gradescope 还支持上传和重新提交、把以前的�
 ## 安全性
 
 - 登录在系统默认浏览器里进行，支持 Edge、Chrome、Brave 等 Chromium 内核的浏览器。密码和 MFA 都由你自己在浏览器里输入，代码接触不到。
+- 可选的终端登录（`--terminal`）是唯一的例外：你在终端里输入密码，它被直接填进隐藏窗口里 Microsoft 自己的表单，不会保存、记录或发往别处；MCP 工具也从不接收密码。
 - 浏览器使用 `~/.minerva-mcp/browser-profile` 里的专用配置，和你日常用的配置分开。工具不会读取你平时浏览器里的 cookie 或保存的密码。
 - 会话保存在 `~/.minerva-mcp/session.json` 和 `~/.minerva-mcp/gradescope-session.json`，都不在项目目录里。
 - 请求只发往 `minerva.leeds.ac.uk` 和 `www.gradescope.com`。文件下载跳转到 Blackboard 的文件域名时，会去掉 cookie。
@@ -34,7 +35,20 @@ npm run check              # 打印你的名字和当前课程列表
 
 - **静默续期**：每次登录都会先在后台的隐藏窗口里尝试。只要 Microsoft 还记得你（“保持登录”），几秒内就能续上，不会弹出窗口。
 - **CLI**：`gradescope` 命令发现会话过期时，会先静默续期，再自动重试。如果需要你亲自登录，会先问你要不要打开登录页。
+- **终端登录**：在服务器上或通过 SSH 时，可以不开窗口登录，见下文。
 - **Agent**：MCP 服务器提供 `minerva_login` 和 `gradescope_login` 两个工具。其他工具报告会话过期时，Agent（任何 MCP 客户端）可以自己调用它们。需要你操作时，学校的登录页会在默认浏览器里打开，Agent 会提示你完成登录。
+
+### 在终端里登录
+
+```bash
+npm run login -- --terminal                 # Minerva
+gradescope login --terminal                 # Gradescope
+npm run login -- --terminal --mfa passcode  # 输入 Duo 验证码，而不是批准推送
+```
+
+浏览器在后台无窗口运行。终端会依次询问学校用户名（`ab12cd` 会自动补成 `ab12cd@leeds.ac.uk`）和密码，然后 Duo 向你的手机发送推送；如果 Duo 显示数字，终端会告诉你在 Duo Mobile 里输入哪个。`--mfa` 可选 `push`（默认）、`passcode`（Duo Mobile 或硬件令牌）、`sms`、`call`。推送超时后可以重试或改用验证码。它会对“保持登录状态”和 Duo 的“这是你的设备吗？”选“是”，所以之后的登录通常能静默续期。
+
+在没有显示器的 Linux 上会自动使用终端登录。如果没装 Edge 或 Chrome，先在本目录运行一次 `npx playwright-core install chromium`。
 
 ## Gradescope 命令行
 
@@ -144,6 +158,8 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 - `GRADESCOPE_ALLOW_WRITE`：设为 `1` 才会注册 MCP 的写工具。CLI 不受这个变量影响。
 - `GRADESCOPE_SSO_PATH`：Gradescope 学校单点登录的路径，默认是利兹大学的。设为空值则改用 Gradescope 的普通登录页。
 - `MINERVA_NO_AUTO_LOGIN`：设为 `1` 后，CLI 不会在会话过期时自动续期。
+- `MINERVA_USERNAME`：终端登录时直接填入的用户名，不再询问。等同于 `--user`。
+- `MINERVA_MFA`：终端登录默认的 `--mfa` 方式。
 
 ## 已知限制
 
