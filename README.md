@@ -62,7 +62,7 @@ gradescope regrade COMP3620 "Lab 2" 1.3 -m "My answer matches part (b) of the sp
 
 `submit` supports the three ways Gradescope takes uploads:
 
-- **Code assignments**: any number of files. Zip a folder first; Gradescope unzips it.
+- **Code assignments**: any number of files. A `.zip` is unpacked first and its files are uploaded one by one with their paths, exactly like the website's uploader (`__MACOSX/` and `.DS_Store` are skipped). Add `--keep-zip` if an assignment really wants the archive itself.
 - **PDF assignments**: exactly one PDF. For variable-length PDFs, you still need to assign pages to questions in the browser afterwards. The command prints the link.
 - **Document assignments**: exactly one file.
 

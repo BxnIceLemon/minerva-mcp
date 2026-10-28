@@ -252,6 +252,10 @@ if (process.env.GRADESCOPE_ALLOW_WRITE === '1') {
       assignmentId: gsAssignment,
       files: z.array(z.string()).min(1).describe('Absolute paths of the files to upload'),
       leaderboardName: z.string().optional().describe('Required when the assignment has a leaderboard'),
+      unzip: z
+        .boolean()
+        .optional()
+        .describe('Code uploads only: unpack .zip files and upload their contents, as the website does (default true)'),
       dryRun: z.boolean().optional().describe('Validate and return the plan without uploading'),
       confirm,
     },
