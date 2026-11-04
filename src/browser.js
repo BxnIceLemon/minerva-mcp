@@ -115,6 +115,22 @@ function profileFor(browser) {
 
 export class ProfileBusyError extends Error {}
 
+/** False on a Linux machine with no X or Wayland display, where a window can't open. */
+export function hasDisplay() {
+  return process.platform !== 'linux' || Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+}
+
+// Playwright's own Chromium, when it has been installed
+// (`npx playwright-core install chromium`); the last resort on servers.
+function bundledChromium() {
+  try {
+    const exe = chromium.executablePath();
+    return exe && fs.existsSync(exe) ? [{ executablePath: exe }] : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Opens a persistent context in the chosen browser. */
 export async function launch({ headless = false } = {}) {
   const browser = chooseBrowser();
@@ -122,7 +138,7 @@ export async function launch({ headless = false } = {}) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const attempts = browser.executablePath
     ? [{ executablePath: browser.executablePath }]
-    : (browser.fallbackChannels ?? [browser.channel]).map((channel) => ({ channel }));
+    : [...(browser.fallbackChannels ?? [browser.channel]).map((channel) => ({ channel })), ...(browser.fallbackChannels ? bundledChromium() : [])];
   const errors = [];
   for (const target of attempts) {
     try {
@@ -139,14 +155,14 @@ export async function launch({ headless = false } = {}) {
   throw new Error(`Could not start ${browser.name}.\n${errors.join('\n')}`);
 }
 
-// Polls `check` until it returns a value, the timeout passes, or the user
-// closes every window.
-export async function waitFor(context, check, timeoutMs = LOGIN_TIMEOUT_MS) {
+// Polls `check` until it returns a value, the timeout passes, the user
+// closes every window, or `stopped` returns true.
+export async function waitFor(context, check, timeoutMs = LOGIN_TIMEOUT_MS, stopped = () => false) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const result = await check().catch(() => null);
     if (result) return result;
-    if (context.pages().length === 0) return null;
+    if (context.pages().length === 0 || stopped()) return null;
     await new Promise((r) => setTimeout(r, 1500));
   }
   return null;

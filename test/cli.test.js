@@ -40,3 +40,13 @@ test('commands explain how to sign in when there is no session', () => {
 });
 
 test.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+test('login rejects an unknown MFA method', () => {
+  const r = cli('login', '--terminal', '--mfa', 'carrier-pigeon');
+  assert.equal(r.code, 1);
+  assert.match(r.err, /--mfa must be one of/);
+});
+
+test('help lists terminal sign-in', () => {
+  assert.match(cli('--help').out, /--terminal/);
+});
