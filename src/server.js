@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import * as minerva from './minerva.js';
+import * as minervaWrite from './minerva-write.js';
 import * as gradescope from './gradescope.js';
 import { loadSession } from './session.js';
 import { agentLogin, pendingLogin } from './login-manager.js';
@@ -72,7 +73,7 @@ tool('minerva_whoami', 'Show the signed-in Minerva user.', {}, () => minerva.who
 
 tool(
   'minerva_list_courses',
-  'List the modules/courses you are enrolled in on Minerva, most recently accessed first.',
+  'List the modules/courses you are enrolled in on Minerva, most recently accessed first. Use when the user asks about their courses or modules, or you need a course id for another Minerva tool.',
   {
     search: z.string().optional().describe('Filter by text in the course code or name, e.g. "COMP2011"'),
     includeUnavailable: z.boolean().optional().describe('Include hidden or past courses (default false)'),
@@ -89,14 +90,14 @@ tool(
 
 tool(
   'minerva_list_contents',
-  'List items in a course outline. Omit contentId for the top level; pass a folder/learning module id to list its children.',
+  'List items in a course outline. Omit contentId for the top level; pass a folder/learning module id to list its children. Use when the user asks what is in a course, or to find an assignment or other item in it.',
   { courseId, contentId: z.string().optional().describe('Folder id like "_987654_1"') },
   minerva.listContents,
 );
 
 tool(
   'minerva_get_content',
-  'Get one content item with its full text and the list of its files, including files embedded in the page (ids like "embedded-0").',
+  'Get one content item with its full text and the list of its files, including files embedded in the page (ids like "embedded-0"). Use when the user asks for the details of an assignment or other item: its brief, instructions and attached files.',
   { courseId, contentId: z.string() },
   minerva.getContent,
 );
@@ -110,7 +111,7 @@ tool(
 
 tool(
   'minerva_my_grades',
-  'Show the gradebook for a course: each assessment with due date, your submission status, grade and feedback.',
+  'Show the gradebook for a course: each assessment with due date, your submission status, grade and feedback. Use when the user asks about a course\'s assignments, their grades or feedback.',
   { courseId },
   minerva.myGrades,
 );
@@ -133,6 +134,17 @@ tool(
     until: z.string().optional().describe('ISO date, default since + 28 days'),
   },
   minerva.calendar,
+);
+
+const mvAssignment = z
+  .string()
+  .describe('A unique part of the assignment title (e.g. "CW2"), or its content or gradebook column id');
+
+tool(
+  'minerva_list_submissions',
+  'Show a Minerva assignment\'s submission settings (due date, attempts allowed, file/text allowed) and every attempt you have made, newest first, with status, receipt and files. Use when the user asks for an assignment\'s details (due date, attempts left, what can be submitted) or what they have already submitted, and before submitting.',
+  { courseId, assignment: mvAssignment },
+  minervaWrite.listSubmissions,
 );
 
 tool(
@@ -158,14 +170,14 @@ tool(
 
 tool(
   'gradescope_list_courses',
-  'List your Gradescope courses by term, newest first.',
+  'List your Gradescope courses by term, newest first. Use when the user asks about their Gradescope courses, or you need a course number for another Gradescope tool.',
   { search: z.string().optional().describe('Filter by module code or name') },
   gradescope.listCourses,
 );
 
 tool(
   'gradescope_list_assignments',
-  'List assignments in a Gradescope course with submission status, score, release, due and late-due dates.',
+  'List assignments in a Gradescope course with submission status, score, release, due and late-due dates. Use when the user asks about a course\'s Gradescope assignments or the details of one.',
   { courseId: gsCourse },
   gradescope.listAssignments,
 );
@@ -177,7 +189,7 @@ const gsSubmission = z.string().optional().describe('Omit to use your active sub
 
 tool(
   'gradescope_get_submission',
-  'Show your submission in full: total score, per-question scores, rubric items, grader comments, annotations, regrade threads and autograder test results.',
+  'Show your submission in full: total score, per-question scores, rubric items, grader comments, annotations, regrade threads and autograder test results. Use when the user asks for the details of a Gradescope assignment they have submitted.',
   { courseId: gsCourse, assignmentId: gsAssignment, submissionId: gsSubmission },
   gradescope.getSubmission,
 );
@@ -229,99 +241,111 @@ tool(
   gradescope.upcoming,
 );
 
-// Write tools exist only when the user opts in with GRADESCOPE_ALLOW_WRITE=1.
-// Even then each call needs confirm: true, and dryRun shows the plan first.
-if (process.env.GRADESCOPE_ALLOW_WRITE === '1') {
-  const confirm = z
-    .boolean()
-    .optional()
-    .describe('Must be true to actually send. Only set it after showing the user the dryRun plan and getting their explicit yes.');
-  const guarded = (fn) => (args) => {
-    const { confirm: ok, dryRun, ...rest } = args;
-    if (!dryRun && ok !== true) {
-      throw new Error('Not sent. Call again with dryRun: true, show the plan to the user, and only then call with confirm: true.');
-    }
-    return fn({ ...rest, dryRun: Boolean(dryRun) });
-  };
+// Write tools. Each call needs confirm: true, and dryRun shows the plan first.
+const confirm = z
+  .boolean()
+  .optional()
+  .describe('Must be true to actually send. Only set it after showing the user the dryRun plan and getting their explicit yes.');
+const guarded = (fn) => (args) => {
+  const { confirm: ok, dryRun, ...rest } = args;
+  if (!dryRun && ok !== true) {
+    throw new Error('Not sent. Call again with dryRun: true, show the plan to the user, and only then call with confirm: true.');
+  }
+  return fn({ ...rest, dryRun: Boolean(dryRun) });
+};
 
-  tool(
-    'gradescope_submit',
-    'Upload files as your submission to a Gradescope assignment (code, PDF or document). This replaces your active submission and course staff can see it. Only use when the user explicitly asks to submit. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
-    {
-      courseId: gsCourse,
-      assignmentId: gsAssignment,
-      files: z.array(z.string()).min(1).describe('Absolute paths of the files to upload'),
-      leaderboardName: z.string().optional().describe('Required when the assignment has a leaderboard'),
-      unzip: z
-        .boolean()
-        .optional()
-        .describe('Code uploads only: unpack .zip files and upload their contents, as the website does (default true)'),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without uploading'),
-      confirm,
-    },
-    guarded(gradescope.submit),
-    { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  );
+tool(
+  'minerva_submit',
+  'Submit files (and optional text) to a Minerva Ultra assignment as a new attempt. Course staff see it at once, and it may count as your graded attempt. Use when the user asks to submit an assignment on Minerva. If the item links to Gradescope, use gradescope_submit instead. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
+  {
+    courseId,
+    assignment: mvAssignment,
+    files: z.array(z.string()).optional().describe('Absolute paths of the files to upload'),
+    text: z.string().optional().describe('Text to put in the submission box'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+    confirm,
+  },
+  guarded(minervaWrite.submit),
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+);
 
-  tool(
-    'gradescope_request_regrade',
-    'Send a regrade request on one question to the course staff, or update your pending one. The staff will read it. Only use when the user explicitly asks and has approved the exact wording. Always call with dryRun: true first.',
-    {
-      courseId: gsCourse,
-      assignmentId: gsAssignment,
-      submissionId: gsSubmission,
-      question: z.string().describe('Question number like "2.1", or a unique part of its title'),
-      comment: z.string().min(1).describe("The request text, in the user's own words"),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
-      confirm,
-    },
-    guarded(gradescope.requestRegrade),
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-  );
+tool(
+  'gradescope_submit',
+  'Upload files as your submission to a Gradescope assignment (code, PDF or document). This replaces your active submission and course staff can see it. Use when the user asks to submit an assignment on Gradescope, including one linked from Minerva. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    files: z.array(z.string()).min(1).describe('Absolute paths of the files to upload'),
+    leaderboardName: z.string().optional().describe('Required when the assignment has a leaderboard'),
+    unzip: z
+      .boolean()
+      .optional()
+      .describe('Code uploads only: unpack .zip files and upload their contents, as the website does (default true)'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without uploading'),
+    confirm,
+  },
+  guarded(gradescope.submit),
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+);
 
-  tool(
-    'gradescope_activate_submission',
-    'Make one of your earlier submissions the active (graded) one, replacing the current active submission. Only use when the user explicitly asks. Always call with dryRun: true first, show which submission becomes active, and wait for the user to confirm.',
-    {
-      courseId: gsCourse,
-      assignmentId: gsAssignment,
-      submissionId: z.string().describe('The earlier submission to activate (from gradescope_list_submissions)'),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
-      confirm,
-    },
-    guarded(gradescope.activateSubmission),
-    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
-  );
+tool(
+  'gradescope_request_regrade',
+  'Send a regrade request on one question to the course staff, or update your pending one. The staff will read it. Only use when the user explicitly asks and has approved the exact wording. Always call with dryRun: true first.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    submissionId: gsSubmission,
+    question: z.string().describe('Question number like "2.1", or a unique part of its title'),
+    comment: z.string().min(1).describe("The request text, in the user's own words"),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+    confirm,
+  },
+  guarded(gradescope.requestRegrade),
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+);
 
-  tool(
-    'gradescope_add_group_members',
-    'Add classmates to your group submission by name, email or id. They will be able to see and change the submission. Only use when the user explicitly names who to add. Always call with dryRun: true first.',
-    {
-      courseId: gsCourse,
-      assignmentId: gsAssignment,
-      submissionId: gsSubmission,
-      members: z.array(z.string()).min(1).describe('Names, emails or ids of the people to add'),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
-      confirm,
-    },
-    guarded(gradescope.addGroupMembers),
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  );
+tool(
+  'gradescope_activate_submission',
+  'Make one of your earlier submissions the active (graded) one, replacing the current active submission. Only use when the user explicitly asks. Always call with dryRun: true first, show which submission becomes active, and wait for the user to confirm.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    submissionId: z.string().describe('The earlier submission to activate (from gradescope_list_submissions)'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+    confirm,
+  },
+  guarded(gradescope.activateSubmission),
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+);
 
-  tool(
-    'gradescope_remove_group_member',
-    'Remove one member from your group submission, or leave the group with member "me" (you then lose access to that submission). Only use when the user explicitly asks. Always call with dryRun: true first.',
-    {
-      courseId: gsCourse,
-      assignmentId: gsAssignment,
-      submissionId: gsSubmission,
-      member: z.string().describe('Name or id of the group member to remove, or "me" to leave'),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
-      confirm,
-    },
-    guarded(gradescope.removeGroupMember),
-    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
-  );
-}
+tool(
+  'gradescope_add_group_members',
+  'Add classmates to your group submission by name, email or id. They will be able to see and change the submission. Only use when the user explicitly names who to add. Always call with dryRun: true first.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    submissionId: gsSubmission,
+    members: z.array(z.string()).min(1).describe('Names, emails or ids of the people to add'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+    confirm,
+  },
+  guarded(gradescope.addGroupMembers),
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+);
+
+tool(
+  'gradescope_remove_group_member',
+  'Remove one member from your group submission, or leave the group with member "me" (you then lose access to that submission). Only use when the user explicitly asks. Always call with dryRun: true first.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    submissionId: gsSubmission,
+    member: z.string().describe('Name or id of the group member to remove, or "me" to leave'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+    confirm,
+  },
+  guarded(gradescope.removeGroupMember),
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+);
 
 await server.connect(new StdioServerTransport());

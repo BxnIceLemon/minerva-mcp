@@ -9,7 +9,7 @@
 
 ## Checklist
 
-- [ ] No new non-GET requests outside `src/gradescope/write.js`
+- [ ] No new non-GET requests outside `src/minerva-write.js` and `src/gradescope/write.js`
 - [ ] Any write is dry-runnable, confirmed in the CLI, and opt-in plus `confirm: true` in MCP
 - [ ] Writes were tested only as dry runs, not on real coursework
 - [ ] Session cookies still only go to `minerva.leeds.ac.uk` / `www.gradescope.com`

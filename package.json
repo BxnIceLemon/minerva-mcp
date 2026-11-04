@@ -1,11 +1,12 @@
 {
   "name": "minerva-mcp",
   "version": "0.1.0",
-  "description": "Unofficial read-only MCP server for University of Leeds Minerva (Blackboard Learn Ultra)",
+  "description": "Unofficial MCP server and CLI for University of Leeds Minerva (Blackboard Learn Ultra) and Gradescope",
   "type": "module",
   "bin": {
     "minerva-mcp": "src/server.js",
-    "gradescope": "src/cli.js"
+    "gradescope": "src/cli.js",
+    "minerva": "src/minerva-cli.js"
   },
   "scripts": {
     "login": "node src/login.js",
