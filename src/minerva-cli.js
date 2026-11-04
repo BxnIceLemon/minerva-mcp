@@ -8,12 +8,15 @@ import * as mvWrite from './minerva-write.js';
 import { SessionError } from './client.js';
 import { loadSession } from './session.js';
 import { login } from './auth.js';
-import { runLoginCli } from './login-cli.js';
+import { runLoginCli, loginOptions, LOGIN_OPTIONS } from './login-cli.js';
 
 const HELP = `Usage: minerva <command> [options]
 
 Account
   login                                   Sign in to Minerva in a browser window
+      [--terminal] [--user NAME] [--mfa push|passcode|sms|call]
+      --terminal asks for your username, password and Duo in this terminal
+      instead (the default when there is no display)
   status                                  Show whether you are signed in
 
 Browse
@@ -32,6 +35,7 @@ Options
 unique part of its title ("CW2"), or its content or column id.`;
 
 const options = {
+  ...LOGIN_OPTIONS,
   days: { type: 'string' },
   message: { type: 'string', short: 'm' },
   'dry-run': { type: 'boolean' },
@@ -64,8 +68,8 @@ async function confirm(question, yes) {
 }
 
 const commands = {
-  async login() {
-    if ((await runLoginCli('minerva', { silent: true })) !== 0) throw new Error('Login was not completed');
+  async login(_, o) {
+    if ((await runLoginCli('minerva', loginOptions(o))) !== 0) throw new Error('Login was not completed');
   },
 
   async status(_, o) {
@@ -141,7 +145,7 @@ async function main(argv) {
     try {
       return await runOnce();
     } catch (e) {
-      if (!(e instanceof SessionError) || cmd === 'login' || !(await recoverSession())) throw e;
+      if (!(e instanceof SessionError) || cmd === 'login' || !(await recoverSession(parsed.values))) throw e;
       return await runOnce();
     }
   } catch (e) {
@@ -151,15 +155,17 @@ async function main(argv) {
 }
 
 // On an expired session: refresh silently, and if that isn't enough and we're
-// in a terminal, offer to open the sign-in page. Returns true to retry.
-async function recoverSession() {
+// in a terminal, offer to sign in again. Returns true to retry.
+async function recoverSession(o) {
   if (process.env.MINERVA_NO_AUTO_LOGIN === '1') return false;
   process.stderr.write('Minerva session expired; refreshing…\n');
   const quiet = await login('minerva', { interactive: false }).catch(() => ({ signedIn: false }));
   if (quiet.signedIn) return true;
   if (!process.stdin.isTTY) return false;
-  if (!(await confirm('Open the Minerva sign-in page in your browser?', false))) return false;
-  return (await runLoginCli('minerva', { silent: false })) === 0;
+  const opts = { ...loginOptions(o), silent: false };
+  const where = opts.terminal ? 'here in the terminal' : 'in your browser';
+  if (!(await confirm(`Sign in to Minerva again ${where}?`, false))) return false;
+  return (await runLoginCli('minerva', opts)) === 0;
 }
 
 process.exitCode = await main(process.argv.slice(2));
