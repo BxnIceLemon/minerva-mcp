@@ -14,7 +14,7 @@ Minerva 还支持向 Ultra 作业提交文件或文字。Gradescope 还支持上
 - 请求只发往 `minerva.leeds.ac.uk` 和 `www.gradescope.com`。文件下载跳转到 Blackboard 的文件域名时，会去掉 cookie。
 - Minerva 只发 GET 请求，例外只有作业提交（`minerva submit`）。Gradescope 也只发 GET 请求，例外只有 `submit`、`activate`、`add-member`、`remove-member` 和 `regrade`：
   - 在 CLI 里，这些命令都会先显示要做什么，问你 `[y/N]`，确认后才发送。加 `--dry-run` 则只显示计划，不发送。
-  - 在 MCP 里，只有设置了 `MINERVA_ALLOW_WRITE=1`（Minerva）或 `GRADESCOPE_ALLOW_WRITE=1`（Gradescope），对应的写工具才会出现。即使出现了，每次调用也必须带 `confirm: true`。工具说明里要求 Agent 先给你看 dry-run 的结果，得到你的同意后才能发送。
+  - 在 MCP 里，每次调用写工具都必须带 `confirm: true`，不带就不会发送。工具说明里要求 Agent 先给你看 dry-run 的结果，得到你的同意后才能发送。
 - 没有任何遥测。
 
 ## 使用
@@ -101,7 +101,7 @@ minerva submit COMP3620 CW2 -m "链接：https://…"  # 只交文字
 }
 ```
 
-如果也要开放写工具，在这一项里加上 `"env": { "MINERVA_ALLOW_WRITE": "1", "GRADESCOPE_ALLOW_WRITE": "1" }`（只加其中一个也可以）。改完后重启客户端。
+改完后重启客户端。写工具（`minerva_submit` 和会改动数据的 `gradescope_*` 工具）默认就能用，但每次仍要先 dry run，再带 `confirm: true` 才会发送。
 
 ## 注册到 Codex
 
@@ -116,7 +116,6 @@ codex mcp add minerva -- node "<本文件夹的绝对路径>/src/server.js"
 command = "node"
 args = ["<绝对路径>/src/server.js"]
 tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 Codex 默认的 60 秒
-# env = { MINERVA_ALLOW_WRITE = "1", GRADESCOPE_ALLOW_WRITE = "1" }   # 只有要让 Codex 用写工具时才加
 ```
 
 改完后重启 Codex。工具在 Codex 里的用法和在其他 MCP 客户端里一样。保留默认的 60 秒超时也能用，只是 `minerva_login` / `gradescope_login` 会更早返回 `waitingForUser`，调用 `gradescope_get_results` 时 `waitSeconds` 要设在 60 以内。
@@ -138,7 +137,7 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 | `minerva_calendar` | 日历事件 |
 | `minerva_list_submissions` | 作业的提交设置，以及你的每次提交（含回执和文件） |
 | `minerva_api_get` | 直接 GET 任意 `/learn/api/public/` 接口 |
-| `minerva_submit` | 向 Ultra 作业提交文件或文字（需要 `MINERVA_ALLOW_WRITE=1`） |
+| `minerva_submit` | 向 Ultra 作业提交文件或文字（需要 `confirm: true`） |
 | `gradescope_status` | 检查 Gradescope 是否已登录 |
 | `gradescope_login` | 通过 Leeds 单点登录续期或重新登录 Gradescope；需要时会打开默认浏览器 |
 | `gradescope_list_courses` | Gradescope 课程列表（按学期，最新在前） |
@@ -150,19 +149,17 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 | `gradescope_get_comments` | 老师的反馈，以及重评申请和老师的回复 |
 | `gradescope_list_submissions` | 某个作业的所有提交，标出当前有效的那次，以及哪些可以切换 |
 | `gradescope_list_group_members` | 小组提交里有哪些人、人数上限、还能不能改 |
-| `gradescope_submit` | 上传或重新提交（需要 `GRADESCOPE_ALLOW_WRITE=1`） |
-| `gradescope_activate_submission` | 把以前的某次提交设为当前有效提交（需要 `GRADESCOPE_ALLOW_WRITE=1`） |
-| `gradescope_add_group_members` | 把同学加入小组提交（需要 `GRADESCOPE_ALLOW_WRITE=1`） |
-| `gradescope_remove_group_member` | 移除小组成员，或自己退出（需要 `GRADESCOPE_ALLOW_WRITE=1`） |
-| `gradescope_request_regrade` | 提交或修改重评申请（需要 `GRADESCOPE_ALLOW_WRITE=1`） |
+| `gradescope_submit` | 上传或重新提交（需要 `confirm: true`） |
+| `gradescope_activate_submission` | 把以前的某次提交设为当前有效提交（需要 `confirm: true`） |
+| `gradescope_add_group_members` | 把同学加入小组提交（需要 `confirm: true`） |
+| `gradescope_remove_group_member` | 移除小组成员，或自己退出（需要 `confirm: true`） |
+| `gradescope_request_regrade` | 提交或修改重评申请（需要 `confirm: true`） |
 
 ## 环境变量
 
 - `MINERVA_BROWSER`：登录用的浏览器，可以填可执行文件路径，也可以填通道名（`msedge`、`chrome`）。默认用系统默认浏览器。如果默认浏览器是无法自动化的 Firefox 或 Safari，会改用已安装的 Edge 或 Chrome。
 - `MINERVA_MCP_HOME`：会话目录，默认 `~/.minerva-mcp`
 - `MINERVA_DOWNLOAD_DIR`：下载目录，默认 `~/Downloads/minerva`
-- `MINERVA_ALLOW_WRITE`：设为 `1` 才会注册 Minerva 的 MCP 写工具（`minerva_submit`）。CLI 不受这个变量影响。
-- `GRADESCOPE_ALLOW_WRITE`：设为 `1` 才会注册 Gradescope 的 MCP 写工具。CLI 不受这个变量影响。
 - `GRADESCOPE_SSO_PATH`：Gradescope 学校单点登录的路径，默认是利兹大学的。设为空值则改用 Gradescope 的普通登录页。
 - `MINERVA_NO_AUTO_LOGIN`：设为 `1` 后，CLI 不会在会话过期时自动续期。
 

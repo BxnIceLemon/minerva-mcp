@@ -14,7 +14,7 @@ On Minerva you can also submit files or text to Ultra assignments. On Gradescope
 - Requests only go to `minerva.leeds.ac.uk` and `www.gradescope.com`. When a file download redirects to Blackboard's file host, the session cookie is dropped.
 - Minerva: only GET requests, except assignment submissions (`minerva submit`). Gradescope: only GET requests, except `submit`, `activate`, `add-member`, `remove-member` and `regrade`:
   - In the CLI, each one shows what it will do and ask `[y/N]` before sending. `--dry-run` only shows the plan.
-  - In MCP, the write tools don't exist unless you set `MINERVA_ALLOW_WRITE=1` (Minerva) or `GRADESCOPE_ALLOW_WRITE=1` (Gradescope). Even then, every call needs `confirm: true`, and the agent is told to show you a dry run and get your yes first.
+  - In MCP, every write tool call needs `confirm: true`, and the agent is told to show you a dry run and get your yes first. Without `confirm: true` nothing is sent.
 - There is no telemetry.
 
 ## Usage
@@ -101,7 +101,7 @@ Most MCP clients accept a stdio server in this JSON form (in the client's MCP se
 }
 ```
 
-To also expose the write tools, add `"env": { "MINERVA_ALLOW_WRITE": "1", "GRADESCOPE_ALLOW_WRITE": "1" }` to the entry (either one on its own works too). Restart the client afterwards.
+Restart the client afterwards. The write tools (`minerva_submit` and the `gradescope_*` ones that change something) are available straight away; each still needs a dry run and `confirm: true`.
 
 ## Add to Codex
 
@@ -116,7 +116,6 @@ Or add it to `~/.codex/config.toml`:
 command = "node"
 args = ["<absolute path>/src/server.js"]
 tool_timeout_sec = 300   # waiting for a sign-in or an autograder can take longer than Codex's 60 s default
-# env = { MINERVA_ALLOW_WRITE = "1", GRADESCOPE_ALLOW_WRITE = "1" }   # only if Codex should get the write tools
 ```
 
 Restart Codex afterwards. The tools work the same in Codex. With the default 60 s timeout they still work, but `minerva_login` / `gradescope_login` return `waitingForUser` sooner, and `gradescope_get_results` should be called with `waitSeconds` under 60.
@@ -138,7 +137,7 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 | `minerva_calendar` | Calendar events |
 | `minerva_list_submissions` | An assignment's submission settings and your attempts, with receipts and files |
 | `minerva_api_get` | GET any `/learn/api/public/` endpoint directly |
-| `minerva_submit` | Submit files or text to an Ultra assignment (only with `MINERVA_ALLOW_WRITE=1`) |
+| `minerva_submit` | Submit files or text to an Ultra assignment (needs `confirm: true`) |
 | `gradescope_status` | Check whether you're signed in to Gradescope |
 | `gradescope_login` | Refresh or start a Gradescope sign-in through Leeds SSO; opens your default browser if needed |
 | `gradescope_list_courses` | Your Gradescope courses by term, newest first |
@@ -150,19 +149,17 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 | `gradescope_get_comments` | Grader feedback and regrade requests with staff replies |
 | `gradescope_list_submissions` | Every submission to an assignment, marking the active one and which can be activated |
 | `gradescope_list_group_members` | Who is in your group submission, the size limit, and whether it can still change |
-| `gradescope_submit` | Upload or resubmit (only with `GRADESCOPE_ALLOW_WRITE=1`) |
-| `gradescope_activate_submission` | Make an earlier submission the active one (only with `GRADESCOPE_ALLOW_WRITE=1`) |
-| `gradescope_add_group_members` | Add classmates to your group submission (only with `GRADESCOPE_ALLOW_WRITE=1`) |
-| `gradescope_remove_group_member` | Remove a group member, or leave the group (only with `GRADESCOPE_ALLOW_WRITE=1`) |
-| `gradescope_request_regrade` | Send or update a regrade request (only with `GRADESCOPE_ALLOW_WRITE=1`) |
+| `gradescope_submit` | Upload or resubmit (needs `confirm: true`) |
+| `gradescope_activate_submission` | Make an earlier submission the active one (needs `confirm: true`) |
+| `gradescope_add_group_members` | Add classmates to your group submission (needs `confirm: true`) |
+| `gradescope_remove_group_member` | Remove a group member, or leave the group (needs `confirm: true`) |
+| `gradescope_request_regrade` | Send or update a regrade request (needs `confirm: true`) |
 
 ## Environment variables
 
 - `MINERVA_BROWSER`: the browser for sign-in, as a path to its executable or a channel (`msedge`, `chrome`). Defaults to your system default browser. If that is Firefox or Safari, which can't be automated, an installed Edge or Chrome is used instead.
 - `MINERVA_MCP_HOME`: the session folder. Defaults to `~/.minerva-mcp`.
 - `MINERVA_DOWNLOAD_DIR`: the download folder. Defaults to `~/Downloads/minerva`.
-- `MINERVA_ALLOW_WRITE`: set to `1` to register the Minerva MCP write tool (`minerva_submit`). The CLI doesn't need it.
-- `GRADESCOPE_ALLOW_WRITE`: set to `1` to register the Gradescope MCP write tools. The CLI doesn't need it.
 - `GRADESCOPE_SSO_PATH`: Gradescope's school sign-in path. Defaults to the University of Leeds; set it to an empty value to use the plain Gradescope login page.
 - `MINERVA_NO_AUTO_LOGIN`: set to `1` to stop the CLI from refreshing an expired session by itself.
 

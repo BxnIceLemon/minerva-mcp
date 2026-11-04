@@ -16,7 +16,7 @@ before(async () => {
     new StdioClientTransport({
       command: process.execPath,
       args: ['src/server.js'],
-      env: { ...process.env, MINERVA_MCP_HOME: home, GRADESCOPE_ALLOW_WRITE: '', MINERVA_ALLOW_WRITE: '' },
+      env: { ...process.env, MINERVA_MCP_HOME: home },
     }),
   );
 });
@@ -31,90 +31,46 @@ async function call(name, args = {}) {
   return { isError: Boolean(r.isError), text: r.content[0].text };
 }
 
-test('registers every read tool and no write tools by default', async () => {
+const WRITE_TOOLS = [
+  'minerva_submit',
+  'gradescope_submit',
+  'gradescope_request_regrade',
+  'gradescope_activate_submission',
+  'gradescope_add_group_members',
+  'gradescope_remove_group_member',
+];
+
+test('registers every read and write tool by default', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 13);
-  assert.equal(names.filter((n) => n.startsWith('gradescope_')).length, 11);
-  assert.ok(names.includes('minerva_login'));
-  assert.ok(names.includes('minerva_list_submissions'));
-  assert.ok(names.includes('gradescope_login'));
-  assert.ok(!names.includes('minerva_submit'));
-  assert.ok(!names.includes('gradescope_submit'));
-  assert.ok(!names.includes('gradescope_request_regrade'));
-  for (const t of tools) assert.notEqual(t.annotations?.destructiveHint, true, t.name);
-});
-
-test('write tools appear only with GRADESCOPE_ALLOW_WRITE=1 and refuse without confirm', async () => {
-  const writer = new Client({ name: 'test-write', version: '0' });
-  await writer.connect(
-    new StdioClientTransport({
-      command: process.execPath,
-      args: ['src/server.js'],
-      env: { ...process.env, MINERVA_MCP_HOME: home, GRADESCOPE_ALLOW_WRITE: '1' },
-    }),
-  );
-  try {
-    const { tools } = await writer.listTools();
-    const submit = tools.find((t) => t.name === 'gradescope_submit');
-    assert.ok(submit);
-    assert.equal(submit.annotations.destructiveHint, true);
-    assert.ok(tools.find((t) => t.name === 'gradescope_request_regrade'));
-    for (const name of ['gradescope_activate_submission', 'gradescope_add_group_members', 'gradescope_remove_group_member']) {
-      assert.ok(tools.find((t) => t.name === name), name);
-    }
-
-    const act = await writer.callTool({
-      name: 'gradescope_activate_submission',
-      arguments: { courseId: '1', assignmentId: '2', submissionId: '3' },
-    });
-    assert.ok(act.isError);
-    assert.match(act.content[0].text, /Not sent/);
-
-    const r = await writer.callTool({
-      name: 'gradescope_submit',
-      arguments: { courseId: '1', assignmentId: '2', files: ['x.py'] },
-    });
-    assert.ok(r.isError);
-    assert.match(r.content[0].text, /Not sent/);
-
-    const g = await writer.callTool({
-      name: 'gradescope_request_regrade',
-      arguments: { courseId: '1', assignmentId: '2', question: '1.1', comment: 'x', confirm: false },
-    });
-    assert.ok(g.isError);
-    assert.match(g.content[0].text, /Not sent/);
-  } finally {
-    await writer.close();
+  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 14);
+  assert.equal(names.filter((n) => n.startsWith('gradescope_')).length, 16);
+  for (const n of ['minerva_login', 'minerva_list_submissions', 'gradescope_login', ...WRITE_TOOLS]) {
+    assert.ok(names.includes(n), n);
   }
+  // Only the write tools are marked as changing anything.
+  for (const t of tools) {
+    assert.equal(t.annotations?.readOnlyHint === false && t.name !== 'minerva_download_attachment', WRITE_TOOLS.includes(t.name), t.name);
+  }
+  assert.equal(tools.find((t) => t.name === 'minerva_submit').annotations.destructiveHint, true);
+  assert.equal(tools.find((t) => t.name === 'gradescope_submit').annotations.destructiveHint, true);
 });
 
-test('minerva_submit appears only with MINERVA_ALLOW_WRITE=1 and refuses without confirm', async () => {
-  const writer = new Client({ name: 'test-minerva-write', version: '0' });
-  await writer.connect(
-    new StdioClientTransport({
-      command: process.execPath,
-      args: ['src/server.js'],
-      env: { ...process.env, MINERVA_MCP_HOME: home, MINERVA_ALLOW_WRITE: '1', GRADESCOPE_ALLOW_WRITE: '' },
-    }),
-  );
-  try {
-    const { tools } = await writer.listTools();
-    const submit = tools.find((t) => t.name === 'minerva_submit');
-    assert.ok(submit);
-    assert.equal(submit.annotations.destructiveHint, true);
-    assert.ok(!tools.find((t) => t.name === 'gradescope_submit'));
-
-    for (const confirm of [undefined, false]) {
-      const r = await writer.callTool({
-        name: 'minerva_submit',
-        arguments: { courseId: 'COMP1', assignment: 'CW1', files: ['x.zip'], ...(confirm === undefined ? {} : { confirm }) },
-      });
-      assert.ok(r.isError);
-      assert.match(r.content[0].text, /Not sent/);
+test('write tools refuse to send without confirm: true', async () => {
+  const cases = [
+    ['minerva_submit', { courseId: 'COMP1', assignment: 'CW1', files: ['x.zip'] }],
+    ['gradescope_submit', { courseId: '1', assignmentId: '2', files: ['x.py'] }],
+    ['gradescope_activate_submission', { courseId: '1', assignmentId: '2', submissionId: '3' }],
+    ['gradescope_request_regrade', { courseId: '1', assignmentId: '2', question: '1.1', comment: 'x' }],
+    ['gradescope_add_group_members', { courseId: '1', assignmentId: '2', members: ['a'] }],
+    ['gradescope_remove_group_member', { courseId: '1', assignmentId: '2', member: 'me' }],
+  ];
+  for (const [name, args] of cases) {
+    for (const extra of [{}, { confirm: false }]) {
+      const r = await call(name, { ...args, ...extra });
+      assert.ok(r.isError, name);
+      assert.match(r.text, /Not sent/, name);
     }
-  } finally {
-    await writer.close();
   }
 });
 

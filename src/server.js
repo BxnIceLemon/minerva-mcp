@@ -241,9 +241,7 @@ tool(
   gradescope.upcoming,
 );
 
-// Write tools exist only when the user opts in with MINERVA_ALLOW_WRITE=1 or
-// GRADESCOPE_ALLOW_WRITE=1. Even then each call needs confirm: true, and
-// dryRun shows the plan first.
+// Write tools. Each call needs confirm: true, and dryRun shows the plan first.
 const confirm = z
   .boolean()
   .optional()
@@ -256,102 +254,98 @@ const guarded = (fn) => (args) => {
   return fn({ ...rest, dryRun: Boolean(dryRun) });
 };
 
-if (process.env.MINERVA_ALLOW_WRITE === '1') {
-  tool(
-    'minerva_submit',
-    'Submit files (and optional text) to a Minerva Ultra assignment as a new attempt. Course staff see it at once, and it may count as your graded attempt. Only use when the user explicitly asks to submit. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
-    {
-      courseId,
-      assignment: mvAssignment,
-      files: z.array(z.string()).optional().describe('Absolute paths of the files to upload'),
-      text: z.string().optional().describe('Text to put in the submission box'),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
-      confirm,
-    },
-    guarded(minervaWrite.submit),
-    { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  );
-}
+tool(
+  'minerva_submit',
+  'Submit files (and optional text) to a Minerva Ultra assignment as a new attempt. Course staff see it at once, and it may count as your graded attempt. Only use when the user explicitly asks to submit. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
+  {
+    courseId,
+    assignment: mvAssignment,
+    files: z.array(z.string()).optional().describe('Absolute paths of the files to upload'),
+    text: z.string().optional().describe('Text to put in the submission box'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+    confirm,
+  },
+  guarded(minervaWrite.submit),
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+);
 
-if (process.env.GRADESCOPE_ALLOW_WRITE === '1') {
-  tool(
-    'gradescope_submit',
-    'Upload files as your submission to a Gradescope assignment (code, PDF or document). This replaces your active submission and course staff can see it. Only use when the user explicitly asks to submit. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
-    {
-      courseId: gsCourse,
-      assignmentId: gsAssignment,
-      files: z.array(z.string()).min(1).describe('Absolute paths of the files to upload'),
-      leaderboardName: z.string().optional().describe('Required when the assignment has a leaderboard'),
-      unzip: z
-        .boolean()
-        .optional()
-        .describe('Code uploads only: unpack .zip files and upload their contents, as the website does (default true)'),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without uploading'),
-      confirm,
-    },
-    guarded(gradescope.submit),
-    { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  );
+tool(
+  'gradescope_submit',
+  'Upload files as your submission to a Gradescope assignment (code, PDF or document). This replaces your active submission and course staff can see it. Only use when the user explicitly asks to submit. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    files: z.array(z.string()).min(1).describe('Absolute paths of the files to upload'),
+    leaderboardName: z.string().optional().describe('Required when the assignment has a leaderboard'),
+    unzip: z
+      .boolean()
+      .optional()
+      .describe('Code uploads only: unpack .zip files and upload their contents, as the website does (default true)'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without uploading'),
+    confirm,
+  },
+  guarded(gradescope.submit),
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+);
 
-  tool(
-    'gradescope_request_regrade',
-    'Send a regrade request on one question to the course staff, or update your pending one. The staff will read it. Only use when the user explicitly asks and has approved the exact wording. Always call with dryRun: true first.',
-    {
-      courseId: gsCourse,
-      assignmentId: gsAssignment,
-      submissionId: gsSubmission,
-      question: z.string().describe('Question number like "2.1", or a unique part of its title'),
-      comment: z.string().min(1).describe("The request text, in the user's own words"),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
-      confirm,
-    },
-    guarded(gradescope.requestRegrade),
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-  );
+tool(
+  'gradescope_request_regrade',
+  'Send a regrade request on one question to the course staff, or update your pending one. The staff will read it. Only use when the user explicitly asks and has approved the exact wording. Always call with dryRun: true first.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    submissionId: gsSubmission,
+    question: z.string().describe('Question number like "2.1", or a unique part of its title'),
+    comment: z.string().min(1).describe("The request text, in the user's own words"),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+    confirm,
+  },
+  guarded(gradescope.requestRegrade),
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+);
 
-  tool(
-    'gradescope_activate_submission',
-    'Make one of your earlier submissions the active (graded) one, replacing the current active submission. Only use when the user explicitly asks. Always call with dryRun: true first, show which submission becomes active, and wait for the user to confirm.',
-    {
-      courseId: gsCourse,
-      assignmentId: gsAssignment,
-      submissionId: z.string().describe('The earlier submission to activate (from gradescope_list_submissions)'),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
-      confirm,
-    },
-    guarded(gradescope.activateSubmission),
-    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
-  );
+tool(
+  'gradescope_activate_submission',
+  'Make one of your earlier submissions the active (graded) one, replacing the current active submission. Only use when the user explicitly asks. Always call with dryRun: true first, show which submission becomes active, and wait for the user to confirm.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    submissionId: z.string().describe('The earlier submission to activate (from gradescope_list_submissions)'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+    confirm,
+  },
+  guarded(gradescope.activateSubmission),
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+);
 
-  tool(
-    'gradescope_add_group_members',
-    'Add classmates to your group submission by name, email or id. They will be able to see and change the submission. Only use when the user explicitly names who to add. Always call with dryRun: true first.',
-    {
-      courseId: gsCourse,
-      assignmentId: gsAssignment,
-      submissionId: gsSubmission,
-      members: z.array(z.string()).min(1).describe('Names, emails or ids of the people to add'),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
-      confirm,
-    },
-    guarded(gradescope.addGroupMembers),
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  );
+tool(
+  'gradescope_add_group_members',
+  'Add classmates to your group submission by name, email or id. They will be able to see and change the submission. Only use when the user explicitly names who to add. Always call with dryRun: true first.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    submissionId: gsSubmission,
+    members: z.array(z.string()).min(1).describe('Names, emails or ids of the people to add'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+    confirm,
+  },
+  guarded(gradescope.addGroupMembers),
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+);
 
-  tool(
-    'gradescope_remove_group_member',
-    'Remove one member from your group submission, or leave the group with member "me" (you then lose access to that submission). Only use when the user explicitly asks. Always call with dryRun: true first.',
-    {
-      courseId: gsCourse,
-      assignmentId: gsAssignment,
-      submissionId: gsSubmission,
-      member: z.string().describe('Name or id of the group member to remove, or "me" to leave'),
-      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
-      confirm,
-    },
-    guarded(gradescope.removeGroupMember),
-    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
-  );
-}
+tool(
+  'gradescope_remove_group_member',
+  'Remove one member from your group submission, or leave the group with member "me" (you then lose access to that submission). Only use when the user explicitly asks. Always call with dryRun: true first.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    submissionId: gsSubmission,
+    member: z.string().describe('Name or id of the group member to remove, or "me" to leave'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+    confirm,
+  },
+  guarded(gradescope.removeGroupMember),
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+);
 
 await server.connect(new StdioServerTransport());
