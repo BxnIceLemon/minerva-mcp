@@ -9,7 +9,7 @@ const V2 = '/learn/api/public/v2';
 
 // Accept a primary id ("_12345_1"), a full course code ("202627_42503_COMP3620")
 // or a short module code ("COMP3620", resolved to the newest matching course).
-async function course(id) {
+export async function course(id) {
   const s = String(id).trim();
   if (s.startsWith('_') || s.includes(':')) return encodeURIComponent(s);
   if (/^\d{6}_/.test(s)) return encodeURIComponent(`courseId:${s}`);

@@ -16,7 +16,7 @@ before(async () => {
     new StdioClientTransport({
       command: process.execPath,
       args: ['src/server.js'],
-      env: { ...process.env, MINERVA_MCP_HOME: home, GRADESCOPE_ALLOW_WRITE: '' },
+      env: { ...process.env, MINERVA_MCP_HOME: home, GRADESCOPE_ALLOW_WRITE: '', MINERVA_ALLOW_WRITE: '' },
     }),
   );
 });
@@ -34,10 +34,12 @@ async function call(name, args = {}) {
 test('registers every read tool and no write tools by default', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 12);
+  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 13);
   assert.equal(names.filter((n) => n.startsWith('gradescope_')).length, 11);
   assert.ok(names.includes('minerva_login'));
+  assert.ok(names.includes('minerva_list_submissions'));
   assert.ok(names.includes('gradescope_login'));
+  assert.ok(!names.includes('minerva_submit'));
   assert.ok(!names.includes('gradescope_submit'));
   assert.ok(!names.includes('gradescope_request_regrade'));
   for (const t of tools) assert.notEqual(t.annotations?.destructiveHint, true, t.name);
@@ -82,6 +84,35 @@ test('write tools appear only with GRADESCOPE_ALLOW_WRITE=1 and refuse without c
     });
     assert.ok(g.isError);
     assert.match(g.content[0].text, /Not sent/);
+  } finally {
+    await writer.close();
+  }
+});
+
+test('minerva_submit appears only with MINERVA_ALLOW_WRITE=1 and refuses without confirm', async () => {
+  const writer = new Client({ name: 'test-minerva-write', version: '0' });
+  await writer.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: ['src/server.js'],
+      env: { ...process.env, MINERVA_MCP_HOME: home, MINERVA_ALLOW_WRITE: '1', GRADESCOPE_ALLOW_WRITE: '' },
+    }),
+  );
+  try {
+    const { tools } = await writer.listTools();
+    const submit = tools.find((t) => t.name === 'minerva_submit');
+    assert.ok(submit);
+    assert.equal(submit.annotations.destructiveHint, true);
+    assert.ok(!tools.find((t) => t.name === 'gradescope_submit'));
+
+    for (const confirm of [undefined, false]) {
+      const r = await writer.callTool({
+        name: 'minerva_submit',
+        arguments: { courseId: 'COMP1', assignment: 'CW1', files: ['x.zip'], ...(confirm === undefined ? {} : { confirm }) },
+      });
+      assert.ok(r.isError);
+      assert.match(r.content[0].text, /Not sent/);
+    }
   } finally {
     await writer.close();
   }

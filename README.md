@@ -4,7 +4,7 @@
 
 An unofficial MCP server and command-line tool for the University of Leeds' Minerva (Blackboard Learn Ultra) and Gradescope. It follows the approach of [campus-cli](https://github.com/alejooroncoy/campus-cli). You sign in yourself in a real browser window, and the tools reuse that session. Minerva data comes from the Blackboard REST API. Gradescope data comes from the same pages and JSON its website uses, because Gradescope has no API for students.
 
-Minerva access is read-only. For Gradescope you can also upload and resubmit, make an earlier submission the active one, add or remove group members, and send or edit regrade requests. These are the only actions that change anything.
+On Minerva you can also submit files or text to Ultra assignments. On Gradescope you can also upload and resubmit, make an earlier submission the active one, add or remove group members, and send or edit regrade requests. These are the only actions that change anything.
 
 ## Security
 
@@ -12,9 +12,9 @@ Minerva access is read-only. For Gradescope you can also upload and resubmit, ma
 - The browser runs with a dedicated profile in `~/.minerva-mcp/browser-profile`, separate from your everyday profile. The tools never read your normal browser's cookies or saved passwords.
 - Sessions are saved in `~/.minerva-mcp/session.json` and `~/.minerva-mcp/gradescope-session.json`. None of these are inside the project folder.
 - Requests only go to `minerva.leeds.ac.uk` and `www.gradescope.com`. When a file download redirects to Blackboard's file host, the session cookie is dropped.
-- Minerva: only GET requests. Gradescope: only GET requests, except `submit`, `activate`, `add-member`, `remove-member` and `regrade`:
+- Minerva: only GET requests, except assignment submissions (`minerva submit`). Gradescope: only GET requests, except `submit`, `activate`, `add-member`, `remove-member` and `regrade`:
   - In the CLI, each one shows what it will do and ask `[y/N]` before sending. `--dry-run` only shows the plan.
-  - In MCP, the write tools don't exist unless you set `GRADESCOPE_ALLOW_WRITE=1`. Even then, every call needs `confirm: true`, and the agent is told to show you a dry run and get your yes first.
+  - In MCP, the write tools don't exist unless you set `MINERVA_ALLOW_WRITE=1` (Minerva) or `GRADESCOPE_ALLOW_WRITE=1` (Gradescope). Even then, every call needs `confirm: true`, and the agent is told to show you a dry run and get your yes first.
 - There is no telemetry.
 
 ## Usage
@@ -33,7 +33,7 @@ Both logins open your default browser. Gradescope goes straight to the Universit
 Sessions expire after a few hours, but you rarely need to sign in again:
 
 - **Silent refresh.** Every login first tries a hidden window. If Microsoft still remembers you ("Stay signed in"), the session is renewed in a few seconds with no window.
-- **CLI.** When a `gradescope` command finds its session expired, it refreshes silently and retries. If you have to sign in, it asks whether to open the sign-in page.
+- **CLI.** When a `minerva` or `gradescope` command finds its session expired, it refreshes silently and retries. If you have to sign in, it asks whether to open the sign-in page.
 - **Agent.** The MCP server has `minerva_login` and `gradescope_login` tools. When a tool reports an expired session, the agent (any MCP client) can call them itself. If you need to act, the University sign-in page opens in your default browser and the agent asks you to finish signing in.
 
 ## Gradescope CLI
@@ -68,6 +68,24 @@ gradescope regrade COMP3620 "Lab 2" 1.3 -m "My answer matches part (b) of the sp
 
 Online assignments (quizzes) can only be answered in the browser.
 
+## Minerva CLI
+
+`npm link` also makes the `minerva` command available. Or run `node src/minerva-cli.js`.
+
+```bash
+minerva login                                     # sign in (same as npm run login)
+minerva upcoming --days 14                        # gradebook items due soon, across your courses
+minerva submissions COMP3620 CW2                  # an assignment's settings and your attempts on it
+minerva submit COMP3620 CW2 report.pdf code.zip --dry-run   # show what would be sent
+minerva submit COMP3620 CW2 report.pdf code.zip   # submit as a new attempt (asks first)
+minerva submit COMP3620 CW2 -m "Link: https://…"  # text only
+```
+
+- `submit` works on Ultra assignments without questions (the ones where you add files or text and press Submit). Each run is a new attempt, so check how many attempts the assignment allows: `submissions` shows it.
+- Files are uploaded as they are; archives are not unpacked.
+- Assignments with questions, group assignments, and ones that need a password or a secure browser are refused; use the browser for those. So are items that link to Gradescope or another tool.
+- After submitting, the command checks that Minerva's receipt lists the uploaded files.
+
 ## Add to an MCP client
 
 Most MCP clients accept a stdio server in this JSON form (in the client's MCP settings file, or a project's `.mcp.json`):
@@ -83,7 +101,7 @@ Most MCP clients accept a stdio server in this JSON form (in the client's MCP se
 }
 ```
 
-To also expose the Gradescope write tools, add `"env": { "GRADESCOPE_ALLOW_WRITE": "1" }` to the entry. Restart the client afterwards.
+To also expose the write tools, add `"env": { "MINERVA_ALLOW_WRITE": "1", "GRADESCOPE_ALLOW_WRITE": "1" }` to the entry (either one on its own works too). Restart the client afterwards.
 
 ## Add to Codex
 
@@ -98,7 +116,7 @@ Or add it to `~/.codex/config.toml`:
 command = "node"
 args = ["<absolute path>/src/server.js"]
 tool_timeout_sec = 300   # waiting for a sign-in or an autograder can take longer than Codex's 60 s default
-# env = { GRADESCOPE_ALLOW_WRITE = "1" }   # only if Codex should get the Gradescope write tools
+# env = { MINERVA_ALLOW_WRITE = "1", GRADESCOPE_ALLOW_WRITE = "1" }   # only if Codex should get the write tools
 ```
 
 Restart Codex afterwards. The tools work the same in Codex. With the default 60 s timeout they still work, but `minerva_login` / `gradescope_login` return `waitingForUser` sooner, and `gradescope_get_results` should be called with `waitSeconds` under 60.
@@ -118,7 +136,9 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 | `minerva_my_grades` | Gradebook: due dates, submission status, scores and feedback |
 | `minerva_upcoming_deadlines` | Items due in the next N days across all current courses |
 | `minerva_calendar` | Calendar events |
+| `minerva_list_submissions` | An assignment's submission settings and your attempts, with receipts and files |
 | `minerva_api_get` | GET any `/learn/api/public/` endpoint directly |
+| `minerva_submit` | Submit files or text to an Ultra assignment (only with `MINERVA_ALLOW_WRITE=1`) |
 | `gradescope_status` | Check whether you're signed in to Gradescope |
 | `gradescope_login` | Refresh or start a Gradescope sign-in through Leeds SSO; opens your default browser if needed |
 | `gradescope_list_courses` | Your Gradescope courses by term, newest first |
@@ -141,7 +161,8 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 - `MINERVA_BROWSER`: the browser for sign-in, as a path to its executable or a channel (`msedge`, `chrome`). Defaults to your system default browser. If that is Firefox or Safari, which can't be automated, an installed Edge or Chrome is used instead.
 - `MINERVA_MCP_HOME`: the session folder. Defaults to `~/.minerva-mcp`.
 - `MINERVA_DOWNLOAD_DIR`: the download folder. Defaults to `~/Downloads/minerva`.
-- `GRADESCOPE_ALLOW_WRITE`: set to `1` to register the MCP write tools. The CLI doesn't need it.
+- `MINERVA_ALLOW_WRITE`: set to `1` to register the Minerva MCP write tool (`minerva_submit`). The CLI doesn't need it.
+- `GRADESCOPE_ALLOW_WRITE`: set to `1` to register the Gradescope MCP write tools. The CLI doesn't need it.
 - `GRADESCOPE_SSO_PATH`: Gradescope's school sign-in path. Defaults to the University of Leeds; set it to an empty value to use the plain Gradescope login page.
 - `MINERVA_NO_AUTO_LOGIN`: set to `1` to stop the CLI from refreshing an expired session by itself.
 
@@ -151,6 +172,7 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 - Gradescope reads were tested on real code, PDF, online and group assignments. All write actions were only tested as dry runs, including their refusals (closed assignments, full or locked groups). The request formats come from Gradescope's own web code, but none has been sent for real yet.
 - Gradescope doesn't let students delete a submission. To "undo" one, resubmit or activate an earlier submission instead.
 - No sample with teacher annotations was available, so annotation text is extracted on a best-effort basis.
+- Minerva submission was tested for real on 2026-11-04 with a file upload to an Ultra assignment, and the file read back from Minerva matched the original. Blackboard's public API can't attach files in Ultra courses, so it follows the requests the Ultra web page sends; a Minerva update may require changing it. Text-only submissions follow the same requests but have not been sent for real.
 - Minerva only knows the due date of a Gradescope assignment. For its submission status and score, use the `gradescope_*` tools.
 - In both the Minerva and Gradescope tools, `courseId` accepts a short module code such as `COMP3620` and matches the most recent course with that code.
 - The Gradescope support follows the website's internals, so a Gradescope redesign may require updating it.

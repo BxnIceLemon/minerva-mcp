@@ -9,7 +9,7 @@ export class SessionError extends Error {}
 // (alt-<id>.leeds.ac.uk) or CDN hosts; those are followed without the session cookie.
 const DOWNLOAD_HOSTS = /(?:^alt-[a-z0-9]+\.leeds\.ac\.uk|(?:^|\.)(?:blackboard\.com|blackboardcdn\.com|amazonaws\.com))$/i;
 
-function resolve(url) {
+export function resolve(url) {
   const u = new URL(url, BASE_URL);
   if (u.protocol !== 'https:' || u.host !== HOST) {
     throw new Error(`Refusing to send the Minerva session to ${u.host}`);
@@ -17,13 +17,13 @@ function resolve(url) {
   return u;
 }
 
-function session() {
+export function session() {
   const s = loadSession();
   if (!s) throw new SessionError('Not signed in to Minerva. Call the minerva_login tool, or run `npm run login` in the minerva-mcp folder.');
   return s;
 }
 
-function headers(s, accept = 'application/json') {
+export function headers(s, accept = 'application/json') {
   return {
     Accept: accept,
     Cookie: s.cookies.map((c) => `${c.name}=${c.value}`).join('; '),
@@ -31,7 +31,8 @@ function headers(s, accept = 'application/json') {
   };
 }
 
-// Read-only by construction: this client only ever issues GET requests.
+// This client only ever issues GET requests. The few writes (assignment
+// submissions) live in minerva-write.js.
 export async function get(pathOrUrl, params) {
   const s = session();
   const u = resolve(pathOrUrl);

@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import * as minerva from './minerva.js';
+import * as minervaWrite from './minerva-write.js';
 import * as gradescope from './gradescope.js';
 import { loadSession } from './session.js';
 import { agentLogin, pendingLogin } from './login-manager.js';
@@ -135,6 +136,17 @@ tool(
   minerva.calendar,
 );
 
+const mvAssignment = z
+  .string()
+  .describe('A unique part of the assignment title (e.g. "CW2"), or its content or gradebook column id');
+
+tool(
+  'minerva_list_submissions',
+  'Show a Minerva assignment\'s submission settings (due date, attempts allowed, file/text allowed) and every attempt you have made, newest first, with status, receipt and files.',
+  { courseId, assignment: mvAssignment },
+  minervaWrite.listSubmissions,
+);
+
 tool(
   'minerva_api_get',
   'Read-only escape hatch: GET any Blackboard Learn public REST endpoint under /learn/api/public/.',
@@ -229,21 +241,39 @@ tool(
   gradescope.upcoming,
 );
 
-// Write tools exist only when the user opts in with GRADESCOPE_ALLOW_WRITE=1.
-// Even then each call needs confirm: true, and dryRun shows the plan first.
-if (process.env.GRADESCOPE_ALLOW_WRITE === '1') {
-  const confirm = z
-    .boolean()
-    .optional()
-    .describe('Must be true to actually send. Only set it after showing the user the dryRun plan and getting their explicit yes.');
-  const guarded = (fn) => (args) => {
-    const { confirm: ok, dryRun, ...rest } = args;
-    if (!dryRun && ok !== true) {
-      throw new Error('Not sent. Call again with dryRun: true, show the plan to the user, and only then call with confirm: true.');
-    }
-    return fn({ ...rest, dryRun: Boolean(dryRun) });
-  };
+// Write tools exist only when the user opts in with MINERVA_ALLOW_WRITE=1 or
+// GRADESCOPE_ALLOW_WRITE=1. Even then each call needs confirm: true, and
+// dryRun shows the plan first.
+const confirm = z
+  .boolean()
+  .optional()
+  .describe('Must be true to actually send. Only set it after showing the user the dryRun plan and getting their explicit yes.');
+const guarded = (fn) => (args) => {
+  const { confirm: ok, dryRun, ...rest } = args;
+  if (!dryRun && ok !== true) {
+    throw new Error('Not sent. Call again with dryRun: true, show the plan to the user, and only then call with confirm: true.');
+  }
+  return fn({ ...rest, dryRun: Boolean(dryRun) });
+};
 
+if (process.env.MINERVA_ALLOW_WRITE === '1') {
+  tool(
+    'minerva_submit',
+    'Submit files (and optional text) to a Minerva Ultra assignment as a new attempt. Course staff see it at once, and it may count as your graded attempt. Only use when the user explicitly asks to submit. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
+    {
+      courseId,
+      assignment: mvAssignment,
+      files: z.array(z.string()).optional().describe('Absolute paths of the files to upload'),
+      text: z.string().optional().describe('Text to put in the submission box'),
+      dryRun: z.boolean().optional().describe('Validate and return the plan without sending'),
+      confirm,
+    },
+    guarded(minervaWrite.submit),
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  );
+}
+
+if (process.env.GRADESCOPE_ALLOW_WRITE === '1') {
   tool(
     'gradescope_submit',
     'Upload files as your submission to a Gradescope assignment (code, PDF or document). This replaces your active submission and course staff can see it. Only use when the user explicitly asks to submit. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
