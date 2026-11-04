@@ -73,7 +73,7 @@ tool('minerva_whoami', 'Show the signed-in Minerva user.', {}, () => minerva.who
 
 tool(
   'minerva_list_courses',
-  'List the modules/courses you are enrolled in on Minerva, most recently accessed first.',
+  'List the modules/courses you are enrolled in on Minerva, most recently accessed first. Use when the user asks about their courses or modules, or you need a course id for another Minerva tool.',
   {
     search: z.string().optional().describe('Filter by text in the course code or name, e.g. "COMP2011"'),
     includeUnavailable: z.boolean().optional().describe('Include hidden or past courses (default false)'),
@@ -90,14 +90,14 @@ tool(
 
 tool(
   'minerva_list_contents',
-  'List items in a course outline. Omit contentId for the top level; pass a folder/learning module id to list its children.',
+  'List items in a course outline. Omit contentId for the top level; pass a folder/learning module id to list its children. Use when the user asks what is in a course, or to find an assignment or other item in it.',
   { courseId, contentId: z.string().optional().describe('Folder id like "_987654_1"') },
   minerva.listContents,
 );
 
 tool(
   'minerva_get_content',
-  'Get one content item with its full text and the list of its files, including files embedded in the page (ids like "embedded-0").',
+  'Get one content item with its full text and the list of its files, including files embedded in the page (ids like "embedded-0"). Use when the user asks for the details of an assignment or other item: its brief, instructions and attached files.',
   { courseId, contentId: z.string() },
   minerva.getContent,
 );
@@ -111,7 +111,7 @@ tool(
 
 tool(
   'minerva_my_grades',
-  'Show the gradebook for a course: each assessment with due date, your submission status, grade and feedback.',
+  'Show the gradebook for a course: each assessment with due date, your submission status, grade and feedback. Use when the user asks about a course\'s assignments, their grades or feedback.',
   { courseId },
   minerva.myGrades,
 );
@@ -142,7 +142,7 @@ const mvAssignment = z
 
 tool(
   'minerva_list_submissions',
-  'Show a Minerva assignment\'s submission settings (due date, attempts allowed, file/text allowed) and every attempt you have made, newest first, with status, receipt and files.',
+  'Show a Minerva assignment\'s submission settings (due date, attempts allowed, file/text allowed) and every attempt you have made, newest first, with status, receipt and files. Use when the user asks for an assignment\'s details (due date, attempts left, what can be submitted) or what they have already submitted, and before submitting.',
   { courseId, assignment: mvAssignment },
   minervaWrite.listSubmissions,
 );
@@ -170,14 +170,14 @@ tool(
 
 tool(
   'gradescope_list_courses',
-  'List your Gradescope courses by term, newest first.',
+  'List your Gradescope courses by term, newest first. Use when the user asks about their Gradescope courses, or you need a course number for another Gradescope tool.',
   { search: z.string().optional().describe('Filter by module code or name') },
   gradescope.listCourses,
 );
 
 tool(
   'gradescope_list_assignments',
-  'List assignments in a Gradescope course with submission status, score, release, due and late-due dates.',
+  'List assignments in a Gradescope course with submission status, score, release, due and late-due dates. Use when the user asks about a course\'s Gradescope assignments or the details of one.',
   { courseId: gsCourse },
   gradescope.listAssignments,
 );
@@ -189,7 +189,7 @@ const gsSubmission = z.string().optional().describe('Omit to use your active sub
 
 tool(
   'gradescope_get_submission',
-  'Show your submission in full: total score, per-question scores, rubric items, grader comments, annotations, regrade threads and autograder test results.',
+  'Show your submission in full: total score, per-question scores, rubric items, grader comments, annotations, regrade threads and autograder test results. Use when the user asks for the details of a Gradescope assignment they have submitted.',
   { courseId: gsCourse, assignmentId: gsAssignment, submissionId: gsSubmission },
   gradescope.getSubmission,
 );
@@ -256,7 +256,7 @@ const guarded = (fn) => (args) => {
 
 tool(
   'minerva_submit',
-  'Submit files (and optional text) to a Minerva Ultra assignment as a new attempt. Course staff see it at once, and it may count as your graded attempt. Only use when the user explicitly asks to submit. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
+  'Submit files (and optional text) to a Minerva Ultra assignment as a new attempt. Course staff see it at once, and it may count as your graded attempt. Use when the user asks to submit an assignment on Minerva. If the item links to Gradescope, use gradescope_submit instead. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
   {
     courseId,
     assignment: mvAssignment,
@@ -271,7 +271,7 @@ tool(
 
 tool(
   'gradescope_submit',
-  'Upload files as your submission to a Gradescope assignment (code, PDF or document). This replaces your active submission and course staff can see it. Only use when the user explicitly asks to submit. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
+  'Upload files as your submission to a Gradescope assignment (code, PDF or document). This replaces your active submission and course staff can see it. Use when the user asks to submit an assignment on Gradescope, including one linked from Minerva. Always call with dryRun: true first, show the plan, and wait for the user to confirm.',
   {
     courseId: gsCourse,
     assignmentId: gsAssignment,
