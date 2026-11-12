@@ -7,8 +7,9 @@ import * as mv from './minerva.js';
 import * as mvWrite from './minerva-write.js';
 import { SessionError } from './client.js';
 import { loadSession } from './session.js';
+import { listAccounts, accountInfo, selectAccount, currentAccount, AccountChoiceError } from './accounts.js';
 import { login } from './auth.js';
-import { runLoginCli, loginOptions, LOGIN_OPTIONS } from './login-cli.js';
+import { runLoginCli, loginOptions, chooseAccountCli, LOGIN_OPTIONS } from './login-cli.js';
 
 const HELP = `Usage: minerva <command> [options]
 
@@ -17,7 +18,9 @@ Account
       [--terminal] [--user NAME] [--mfa push|passcode|sms|call]
       --terminal asks for your username, password and Duo in this terminal
       instead (the default when there is no display)
+      [--new-account] signs in someone else and saves them as another account
   status                                  Show whether you are signed in
+  accounts                                List saved accounts
 
 Browse
   upcoming [--days N]                     Gradebook items due in the next N days (default 14)
@@ -28,6 +31,8 @@ Actions (ask for confirmation)
       Submit files (and optional text) to an Ultra assignment as a new attempt
 
 Options
+  --account NAME    Use this saved account (or set MINERVA_ACCOUNT); with
+                    several accounts you are asked which one otherwise
   --json            Print raw JSON
   -h, --help        Show this help
 
@@ -45,6 +50,8 @@ const options = {
 };
 
 class UsageError extends Error {}
+
+const REPORT_ONLY = new Set(['status', 'accounts']);
 
 function need(args, n, usage) {
   if (args.length < n) throw new UsageError(`Usage: minerva ${usage}`);
@@ -69,13 +76,32 @@ async function confirm(question, yes) {
 
 const commands = {
   async login(_, o) {
-    if ((await runLoginCli('minerva', loginOptions(o))) !== 0) throw new Error('Login was not completed');
+    const opts = { ...loginOptions(o), ...(await chooseAccountCli(o, { login: true })) };
+    if ((await runLoginCli('minerva', opts)) !== 0) throw new Error('Login was not completed');
   },
 
   async status(_, o) {
+    let account;
+    try {
+      account = currentAccount();
+    } catch (e) {
+      if (!(e instanceof AccountChoiceError)) throw e;
+      return commands.accounts(_, o);
+    }
     const s = loadSession();
-    if (o.json) return s ? { signedIn: true, userName: s.userName, expiresAt: s.expiresAt } : { signedIn: false };
-    console.log(s ? `Signed in as ${s.userName ?? 'unknown'}; session valid until about ${fmtDate(s.expiresAt)}` : 'Not signed in. Run: minerva login');
+    if (o.json) return s ? { account, signedIn: true, userName: s.userName, expiresAt: s.expiresAt } : { account, signedIn: false };
+    console.log(s ? `Signed in as ${s.userName ?? 'unknown'} (account ${account}); session valid until about ${fmtDate(s.expiresAt)}` : 'Not signed in. Run: minerva login');
+  },
+
+  async accounts(_, o) {
+    const all = listAccounts().map(accountInfo);
+    if (o.json) return all;
+    if (!all.length) return console.log('No saved accounts. Run: minerva login');
+    for (const a of all) {
+      const m = a.minerva.signedIn ? `Minerva until ${fmtDate(a.minerva.expiresAt)}` : 'Minerva not signed in';
+      const g = a.gradescope.signedIn ? 'Gradescope signed in' : 'Gradescope not signed in';
+      console.log(`${a.account}${a.displayName && a.displayName !== a.account ? `  ${a.displayName}` : ''}  ${m}; ${g}`);
+    }
   },
 
   async upcoming(_, o) {
@@ -135,6 +161,17 @@ async function main(argv) {
   if (!fn) {
     console.error(`Unknown command "${cmd}". Run minerva --help.`);
     return 2;
+  }
+  // Every command works on one saved account. login picks its own (it can
+  // add a new one); status and accounts only report.
+  if (cmd !== 'login' && (!REPORT_ONLY.has(cmd) || parsed.values.account)) {
+    try {
+      const { account } = await chooseAccountCli(parsed.values);
+      if (account) selectAccount(account);
+    } catch (e) {
+      console.error(e.message);
+      return 2;
+    }
   }
   const runOnce = async () => {
     const out = await fn(rest, parsed.values);

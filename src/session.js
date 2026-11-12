@@ -1,8 +1,12 @@
 import fs from 'node:fs';
-import { DATA_DIR, SESSION_FILE, HOST } from './config.js';
+import path from 'node:path';
+import { HOST } from './config.js';
+import { sessionFile } from './accounts.js';
 
-export function loadSession(file = SESSION_FILE) {
-  if (!fs.existsSync(file)) return null;
+// `file` defaults to the current account's Minerva session; pass
+// sessionFile('gradescope') for Gradescope.
+export function loadSession(file = sessionFile('minerva')) {
+  if (!file || !fs.existsSync(file)) return null;
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
@@ -10,13 +14,14 @@ export function loadSession(file = SESSION_FILE) {
   }
 }
 
-export function saveSession(session, file = SESSION_FILE) {
-  fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+export function saveSession(session, file = sessionFile('minerva')) {
+  if (!file) throw new Error('No account to save the session to');
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, JSON.stringify(session, null, 2), { mode: 0o600 });
 }
 
-export function clearSession(file = SESSION_FILE) {
-  fs.rmSync(file, { force: true });
+export function clearSession(file = sessionFile('minerva')) {
+  if (file) fs.rmSync(file, { force: true });
 }
 
 // Only cookies scoped to the given host are kept; Microsoft SSO cookies stay

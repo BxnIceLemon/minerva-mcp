@@ -10,8 +10,8 @@ Minerva 还支持向 Ultra 作业提交文件或文字。Gradescope 还支持上
 
 - 登录在系统默认浏览器里进行，支持 Edge、Chrome、Brave 等 Chromium 内核的浏览器。密码和 MFA 都由你自己在浏览器里输入，代码接触不到。
 - 可选的终端登录（`--terminal`）是唯一的例外：你在终端里输入密码，它被直接填进隐藏窗口里 Microsoft 自己的表单，不会保存、记录或发往别处；MCP 工具也从不接收密码。
-- 浏览器使用 `~/.minerva-mcp/browser-profile` 里的专用配置，和你日常用的配置分开。工具不会读取你平时浏览器里的 cookie 或保存的密码。
-- 会话保存在 `~/.minerva-mcp/session.json` 和 `~/.minerva-mcp/gradescope-session.json`，都不在项目目录里。
+- 每个已保存的账号都有自己的专用浏览器配置（`~/.minerva-mcp/accounts/<账号>/browser-profile`），和你日常用的配置分开。工具不会读取你平时浏览器里的 cookie 或保存的密码。
+- 会话按账号保存在 `~/.minerva-mcp/accounts/<账号>/`（`session.json` 和 `gradescope-session.json`），多个人的登录状态不会混在一起，也都不在项目目录里。
 - 请求只发往 `minerva.leeds.ac.uk` 和 `www.gradescope.com`。文件下载跳转到 Blackboard 的文件域名时，会去掉 cookie。
 - Minerva 只发 GET 请求，例外只有作业提交（`minerva submit`）。Gradescope 也只发 GET 请求，例外只有 `submit`、`activate`、`add-member`、`remove-member` 和 `regrade`：
   - 在 CLI 里，这些命令都会先显示要做什么，问你 `[y/N]`，确认后才发送。加 `--dry-run` 则只显示计划，不发送。
@@ -34,9 +34,26 @@ npm run check              # 打印你的名字和当前课程列表
 会话几个小时后就会过期，但一般不需要你重新登录：
 
 - **静默续期**：每次登录都会先在后台的隐藏窗口里尝试。只要 Microsoft 还记得你（“保持登录”），几秒内就能续上，不会弹出窗口。
-- **CLI**：`gradescope` 命令发现会话过期时，会先静默续期，再自动重试。如果需要你亲自登录，会先问你要不要打开登录页。
+- **CLI**：`minerva` 和 `gradescope` 命令发现会话过期时，会先静默续期，再自动重试。如果需要你亲自登录，会先问你要不要打开登录页。
 - **终端登录**：在服务器上或通过 SSH 时，可以不开窗口登录，见下文。
 - **Agent**：MCP 服务器提供 `minerva_login` 和 `gradescope_login` 两个工具。其他工具报告会话过期时，Agent（任何 MCP 客户端）可以自己调用它们。需要你操作时，学校的登录页会在默认浏览器里打开，Agent 会提示你完成登录。
+
+### 多个账号
+
+每个账号单独保存：它的 Minerva 会话、Gradescope 会话和专用浏览器配置都放在 `~/.minerva-mcp/accounts/<Minerva 用户名>/` 里。登录一个人不会碰到另一个人的登录状态。
+
+```bash
+npm run login                              # 第一个账号（以你的 Minerva 用户名命名）
+npm run login -- --new-account             # 登录另一个人，保存为新账号
+minerva accounts                           # 列出已保存的账号
+minerva upcoming --account ab12cd          # 某条命令用指定账号（也可以设置 MINERVA_ACCOUNT）
+```
+
+- 只保存了一个账号时，所有操作都用它。
+- 保存了多个账号又没指定时，在终端里运行的命令会问你用哪个；没有终端时会停下，要求加 `--account`。
+- 在 MCP 里，服务器会通过客户端自己的询问框问你（客户端需支持 MCP elicitation），你的选择在本次会话内一直有效。客户端不支持时，Agent 会被要求先问你，再带上 `account` 调用。`minerva_list_accounts` 和 `minerva_select_account` 用来列出和切换账号。
+- 给已有账号登录时，如果登进去的是另一个人，会被拒绝，所以一个账号的目录里不会混进别人的会话。
+- 旧版本保存的会话，会在新版本第一次运行时自动挪进 `accounts/<用户名>/`。
 
 ### 在终端里登录
 
@@ -138,7 +155,9 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 
 | 工具 | 用途 |
 | --- | --- |
-| `minerva_status` | 检查是否已登录，以及会话何时过期 |
+| `minerva_list_accounts` | 列出已保存的账号，以及本次会话用的是哪个 |
+| `minerva_select_account` | 选定本次会话之后都用的账号（先问过用户） |
+| `minerva_status` | 检查是否已登录，以及会话何时过期（没选定账号时列出所有账号） |
 | `minerva_login` | 续期或重新登录 Minerva；需要你操作时会打开默认浏览器 |
 | `minerva_whoami` | 当前用户 |
 | `minerva_list_courses` | 课程列表，可按代码或名称筛选 |
@@ -175,6 +194,7 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 - `MINERVA_MCP_HOME`：会话目录，默认 `~/.minerva-mcp`
 - `MINERVA_DOWNLOAD_DIR`：下载目录，默认 `~/Downloads/minerva`
 - `GRADESCOPE_SSO_PATH`：Gradescope 学校单点登录的路径，默认是利兹大学的。设为空值则改用 Gradescope 的普通登录页。
+- `MINERVA_ACCOUNT`：要用的已保存账号，设置后不再询问。等同于 `--account`。
 - `MINERVA_NO_AUTO_LOGIN`：设为 `1` 后，CLI 不会在会话过期时自动续期。
 - `MINERVA_USERNAME`：终端登录时直接填入的用户名，不再询问。等同于 `--user`。
 - `MINERVA_MFA`：终端登录默认的 `--mfa` 方式。

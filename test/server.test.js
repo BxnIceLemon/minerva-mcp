@@ -43,7 +43,7 @@ const WRITE_TOOLS = [
 test('registers every read and write tool by default', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 14);
+  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 16);
   assert.equal(names.filter((n) => n.startsWith('gradescope_')).length, 16);
   for (const n of ['minerva_login', 'minerva_list_submissions', 'gradescope_login', ...WRITE_TOOLS]) {
     assert.ok(names.includes(n), n);

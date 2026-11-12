@@ -10,8 +10,8 @@ On Minerva you can also submit files or text to Ultra assignments. On Gradescope
 
 - Sign-in happens in your system default browser (Edge, Chrome, Brave and other Chromium browsers). You type your password and MFA code there yourself; the code never sees them.
 - The optional terminal sign-in (`--terminal`) is the one exception: you type your password in the terminal and it is filled straight into Microsoft's own form in a hidden window. It is never saved, logged or sent anywhere else, and the MCP tools never accept a password.
-- The browser runs with a dedicated profile in `~/.minerva-mcp/browser-profile`, separate from your everyday profile. The tools never read your normal browser's cookies or saved passwords.
-- Sessions are saved in `~/.minerva-mcp/session.json` and `~/.minerva-mcp/gradescope-session.json`. None of these are inside the project folder.
+- The browser runs with a dedicated profile for each saved account (`~/.minerva-mcp/accounts/<account>/browser-profile`), separate from your everyday profile. The tools never read your normal browser's cookies or saved passwords.
+- Sessions are saved per account in `~/.minerva-mcp/accounts/<account>/` (`session.json` and `gradescope-session.json`), so several people's sign-ins never mix. None of these are inside the project folder.
 - Requests only go to `minerva.leeds.ac.uk` and `www.gradescope.com`. When a file download redirects to Blackboard's file host, the session cookie is dropped.
 - Minerva: only GET requests, except assignment submissions (`minerva submit`). Gradescope: only GET requests, except `submit`, `activate`, `add-member`, `remove-member` and `regrade`:
   - In the CLI, each one shows what it will do and ask `[y/N]` before sending. `--dry-run` only shows the plan.
@@ -37,6 +37,23 @@ Sessions expire after a few hours, but you rarely need to sign in again:
 - **CLI.** When a `minerva` or `gradescope` command finds its session expired, it refreshes silently and retries. If you have to sign in, it asks whether to open the sign-in page.
 - **Terminal sign-in.** On a server or over SSH, sign in without a window: see below.
 - **Agent.** The MCP server has `minerva_login` and `gradescope_login` tools. When a tool reports an expired session, the agent (any MCP client) can call them itself. If you need to act, the University sign-in page opens in your default browser and the agent asks you to finish signing in.
+
+### Several accounts
+
+Each account is saved apart from the others: its Minerva session, its Gradescope session and its own browser profile live in `~/.minerva-mcp/accounts/<Minerva username>/`. Signing in one person never touches another's sign-in.
+
+```bash
+npm run login                              # first account (named after your Minerva username)
+npm run login -- --new-account             # sign in someone else and save them as another account
+minerva accounts                           # list saved accounts
+minerva upcoming --account ab12cd          # use one account for a command (or set MINERVA_ACCOUNT)
+```
+
+- With one saved account, everything uses it.
+- With several and none chosen, a command in a terminal asks which one to use; without a terminal it stops and asks for `--account`.
+- In MCP, the server asks you through your client's prompt (if the client supports MCP elicitation) and keeps your answer for the session. Otherwise the agent is told to ask you, then passes `account`. `minerva_list_accounts` and `minerva_select_account` list and switch accounts.
+- A sign-in for an existing account that turns out to be a different person is refused, so one account's folder never holds someone else's session.
+- Sessions saved before accounts existed are moved into `accounts/<username>/` the first time a new version runs.
 
 ### Signing in from a terminal
 
@@ -138,7 +155,9 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 
 | Tool | What it does |
 | --- | --- |
-| `minerva_status` | Check whether you're signed in and when the session expires |
+| `minerva_list_accounts` | List saved accounts and which one this session uses |
+| `minerva_select_account` | Choose the account for the rest of the session (after asking the user) |
+| `minerva_status` | Check whether you're signed in and when the session expires (lists every account when none is chosen) |
 | `minerva_login` | Refresh or start a Minerva sign-in; opens your default browser if you need to act |
 | `minerva_whoami` | Show the signed-in user |
 | `minerva_list_courses` | List your courses, optionally filtered by code or name |
@@ -175,6 +194,7 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 - `MINERVA_MCP_HOME`: the session folder. Defaults to `~/.minerva-mcp`.
 - `MINERVA_DOWNLOAD_DIR`: the download folder. Defaults to `~/Downloads/minerva`.
 - `GRADESCOPE_SSO_PATH`: Gradescope's school sign-in path. Defaults to the University of Leeds; set it to an empty value to use the plain Gradescope login page.
+- `MINERVA_ACCOUNT`: the saved account to use, instead of being asked. Same as `--account`.
 - `MINERVA_NO_AUTO_LOGIN`: set to `1` to stop the CLI from refreshing an expired session by itself.
 - `MINERVA_USERNAME`: the username terminal sign-in fills in, instead of asking. Same as `--user`.
 - `MINERVA_MFA`: the default `--mfa` method for terminal sign-in.

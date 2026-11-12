@@ -6,7 +6,8 @@ import { createInterface } from 'node:readline/promises';
 import * as gs from './gradescope.js';
 import { SessionError } from './client.js';
 import { login } from './auth.js';
-import { runLoginCli, loginOptions, LOGIN_OPTIONS } from './login-cli.js';
+import { runLoginCli, loginOptions, chooseAccountCli, LOGIN_OPTIONS } from './login-cli.js';
+import { listAccounts, accountInfo, selectAccount, currentAccount, AccountChoiceError } from './accounts.js';
 
 const HELP = `Usage: gradescope <command> [options]
 
@@ -45,6 +46,8 @@ Actions (ask for confirmation)
       Remove someone from your group, or leave it with "me" [--dry-run] [--yes]
 
 Options
+  --account NAME    Use this saved account (or set MINERVA_ACCOUNT); with
+                    several accounts you are asked which one otherwise
   --submission ID   Use a specific submission instead of your active one
   --timeout SECS    How long --wait polls (default 600)
   --json            Print raw JSON
@@ -70,6 +73,8 @@ const options = {
 };
 
 class UsageError extends Error {}
+
+const REPORT_ONLY = new Set(['status']);
 
 function need(args, n, usage) {
   if (args.length < n) throw new UsageError(`Usage: gradescope ${usage}`);
@@ -140,13 +145,24 @@ function printAutograder(ag) {
 
 const commands = {
   async login(_, o) {
-    if ((await runLoginCli('gradescope', loginOptions(o))) !== 0) throw new Error('Login was not completed');
+    const opts = { ...loginOptions(o), ...(await chooseAccountCli(o, { login: true })) };
+    if ((await runLoginCli('gradescope', opts)) !== 0) throw new Error('Login was not completed');
   },
 
   async status(_, o) {
-    const s = gs.status();
+    let account;
+    try {
+      account = currentAccount();
+    } catch (e) {
+      if (!(e instanceof AccountChoiceError)) throw e;
+      const all = listAccounts().map((a) => ({ account: a, ...accountInfo(a).gradescope }));
+      if (o.json) return all;
+      for (const a of all) console.log(`${a.account}  ${a.signedIn ? `signed in (session saved ${fmtDate(a.savedAt)})` : 'not signed in'}`);
+      return;
+    }
+    const s = { account, ...gs.status() };
     if (o.json) return s;
-    console.log(s.signedIn ? `Signed in (session saved ${fmtDate(s.savedAt)})` : `Not signed in. ${s.fix}`);
+    console.log(s.signedIn ? `Signed in${account ? ` (account ${account})` : ''}, session saved ${fmtDate(s.savedAt)}` : `Not signed in. ${s.fix}`);
   },
 
   async courses(_, o) {
@@ -377,6 +393,17 @@ async function main(argv) {
   if (!fn) {
     console.error(`Unknown command "${cmd}". Run gradescope --help.`);
     return 2;
+  }
+  // Every command works on one saved account. login picks its own (it can
+  // add a new one); status and accounts only report.
+  if (cmd !== 'login' && (!REPORT_ONLY.has(cmd) || parsed.values.account)) {
+    try {
+      const { account } = await chooseAccountCli(parsed.values);
+      if (account) selectAccount(account);
+    } catch (e) {
+      console.error(e.message);
+      return 2;
+    }
   }
   const runOnce = async () => {
     const out = await fn(rest, parsed.values);

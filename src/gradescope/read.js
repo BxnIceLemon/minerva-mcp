@@ -1,12 +1,13 @@
 // Read-only Gradescope features: courses, assignments, grades, submissions,
 // autograder results and feedback. Only GET requests.
-import { GS_BASE_URL, GS_SESSION_FILE } from '../config.js';
+import { GS_BASE_URL } from '../config.js';
+import { sessionFile } from '../accounts.js';
 import { loadSession } from '../session.js';
 import { html, json } from './http.js';
 import { parseCourses, parseAssignments, reactProps, shapeSubmission, shapeHistory, shapeGroup } from './parse.js';
 
 export function status() {
-  const s = loadSession(GS_SESSION_FILE);
+  const s = loadSession(sessionFile('gradescope'));
   if (!s) return { signedIn: false, fix: 'Call the gradescope_login tool, or run `gradescope login` (`npm run login:gradescope`).' };
   return { signedIn: true, savedAt: s.savedAt, rememberMeExpires: s.expiresAt };
 }
