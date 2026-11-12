@@ -6,6 +6,14 @@
 import { loginAccount, LABELS } from './auth.js';
 
 const jobs = new Map();
+// A finished sign-in waits this long for the agent to come back for its result.
+const RESULT_TTL_MS = 10 * 60 * 1000;
+let runLogin = loginAccount;
+
+/** Tests only: replace the sign-in function. */
+export function setLoginForTests(fn) {
+  runLogin = fn ?? loginAccount;
+}
 // A browser profile can only be opened by one browser process at a time, so
 // logins run one after another.
 let queue = Promise.resolve();
@@ -17,7 +25,7 @@ function start(service, account) {
   job.promise = (queue = queue
     .catch(() => {})
     .then(() =>
-      loginAccount(service, {
+      runLogin(service, {
         account: account ?? undefined,
         newAccount: !account,
         onOpen: (b) => {
@@ -30,7 +38,10 @@ function start(service, account) {
       (r) => (job.result = r),
       (e) => (job.error = e.message),
     )
-    .finally(() => (job.done = true)));
+    .finally(() => {
+      job.done = true;
+      job.finishedAt = Date.now();
+    }));
   jobs.set(keyOf(service, account), job);
   return job;
 }
@@ -50,8 +61,10 @@ export function pendingLogin(service, account) {
 export async function agentLogin(service, { account = null, waitSeconds = 45 } = {}) {
   const label = LABELS[service];
   const key = keyOf(service, account);
+  // A sign-in that already finished is reported, not started again: calling
+  // back "to confirm" must not open a second window.
   let job = jobs.get(key);
-  if (!job || job.done) job = start(service, account);
+  if (!job || (job.done && Date.now() - job.finishedAt > RESULT_TTL_MS)) job = start(service, account);
 
   await Promise.race([job.promise, new Promise((r) => setTimeout(r, waitSeconds * 1000))]);
 
