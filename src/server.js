@@ -1,12 +1,23 @@
 #!/usr/bin/env node
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import * as minerva from './minerva.js';
 import * as minervaWrite from './minerva-write.js';
 import * as gradescope from './gradescope.js';
 import { loadSession } from './session.js';
 import { agentLogin, pendingLogin } from './login-manager.js';
+import {
+  listAccounts,
+  accountInfo,
+  accountExists,
+  currentAccount,
+  selectAccount,
+  selectedAccount,
+  withAccount,
+  AccountChoiceError,
+} from './accounts.js';
 
 const server = new McpServer({ name: 'minerva-leeds', version: '0.1.0' });
 
@@ -14,17 +25,97 @@ const courseId = z
   .string()
   .describe('Course primary id like "_123456_1" (from minerva_list_courses), or the course code');
 
-function tool(name, description, inputSchema, fn, annotations) {
+const accountParam = z
+  .string()
+  .optional()
+  .describe('Saved account to use (see minerva_list_accounts). Only needed when several accounts are saved and the user has not chosen one yet.');
+
+function accountLabel(name) {
+  const a = accountInfo(name);
+  return a.displayName && a.displayName !== name ? `${name} (${a.displayName})` : name;
+}
+
+const NEW_ACCOUNT = '+new';
+
+// Asks the user, through the MCP client's own prompt (elicitation), which saved
+// account to use. Returns the account, NEW_ACCOUNT, or null when the client
+// can't ask or the user dismissed it.
+async function askUser(accounts, { purpose, allowNew = false }) {
+  if (!server.server.getClientCapabilities()?.elicitation) return null;
+  const options = [...accounts, ...(allowNew ? [NEW_ACCOUNT] : [])];
+  try {
+    const r = await server.server.request(
+      {
+        method: 'elicitation/create',
+        params: {
+          message:
+            `Several University accounts are saved: ${accounts.map(accountLabel).join(', ')}. Which one should ${purpose}?` +
+            (allowNew ? ` Choose "${NEW_ACCOUNT}" to sign in with another account.` : ''),
+          requestedSchema: {
+            type: 'object',
+            properties: { account: { type: 'string', title: 'Account', enum: options } },
+            required: ['account'],
+          },
+        },
+      },
+      ElicitResultSchema,
+    );
+    const pick = r.action === 'accept' ? r.content?.account : null;
+    return options.includes(pick) ? pick : null;
+  } catch {
+    return null;
+  }
+}
+
+function choiceNeeded(accounts, { allowNew = false } = {}) {
+  return new Error(
+    `Several accounts are saved: ${accounts.map(accountLabel).join(', ')}. Ask the user which account to use, then call this tool again with ` +
+      `account set to it${allowNew ? ' (or newAccount: true to add another account)' : ''}. ` +
+      'To use it for the rest of the session, call minerva_select_account.',
+  );
+}
+
+// The account a tool call works on: `account` if given, else the chosen or
+// only saved account. With several accounts, the user is asked, and their
+// answer is kept for the rest of the session. null when none is saved yet.
+async function resolveAccount(account, purpose) {
+  if (account) {
+    if (!accountExists(account)) throw new Error(`No saved account "${account}". Saved: ${listAccounts().join(', ') || 'none'}`);
+    return account;
+  }
+  try {
+    return currentAccount();
+  } catch (e) {
+    if (!(e instanceof AccountChoiceError)) throw e;
+    const pick = await askUser(e.accounts, { purpose });
+    if (!pick) throw choiceNeeded(e.accounts);
+    selectAccount(pick);
+    return pick;
+  }
+}
+
+/**
+ * Registers a tool. Unless `accounts: false`, it takes an optional `account`
+ * and runs as that account (see resolveAccount); fn gets (args, account).
+ */
+function tool(name, description, inputSchema, fn, annotations, { accounts = true } = {}) {
   server.registerTool(
     name,
     {
       description,
-      inputSchema,
+      inputSchema: accounts ? { ...inputSchema, account: accountParam } : inputSchema,
       annotations: annotations ?? { readOnlyHint: name !== 'minerva_download_attachment', openWorldHint: true },
     },
     async (args) => {
       try {
-        const result = await fn(args ?? {});
+        let result;
+        if (accounts) {
+          const { account, ...rest } = args ?? {};
+          const acct = await resolveAccount(account, `be used for ${name}`);
+          result = await withAccount(acct, () => fn(rest, acct));
+        } else {
+          result = await fn(args ?? {});
+        }
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (e) {
         return { content: [{ type: 'text', text: `Error: ${e.message}` }], isError: true };
@@ -34,15 +125,59 @@ function tool(name, description, inputSchema, fn, annotations) {
 }
 
 tool(
-  'minerva_status',
-  'Check whether a Minerva login session is saved and when it expires.',
+  'minerva_list_accounts',
+  'List the saved University accounts (each has its own Minerva and Gradescope sign-in) and which one is chosen for this session. ' +
+    'Use when the user asks which accounts are saved, or before asking them which account to use.',
   {},
-  async () => {
-    const s = loadSession();
-    const pending = pendingLogin('minerva');
-    if (!s) return { signedIn: false, loginInProgress: pending, fix: 'Call the minerva_login tool, or run `npm run login` in the minerva-mcp folder.' };
-    return { signedIn: true, userName: s.userName, savedAt: s.savedAt, expiresAt: s.expiresAt, loginInProgress: pending };
+  () => ({ selected: selectedAccount(), accounts: listAccounts().map(accountInfo) }),
+  { readOnlyHint: true, openWorldHint: false },
+  { accounts: false },
+);
+
+tool(
+  'minerva_select_account',
+  'Choose which saved account the Minerva and Gradescope tools use for the rest of this session. ' +
+    'Call it after the user has said which account they mean; never pick one for them.',
+  { account: z.string().describe('A saved account name from minerva_list_accounts') },
+  ({ account }) => {
+    selectAccount(account);
+    return accountInfo(account);
   },
+  { readOnlyHint: true, openWorldHint: false },
+  { accounts: false },
+);
+
+// Status tools report on every account instead of asking which one.
+function statusOf(service, account, fn) {
+  if (account && !accountExists(account)) throw new Error(`No saved account "${account}". Saved: ${listAccounts().join(', ') || 'none'}`);
+  let name = account;
+  if (!name) {
+    try {
+      name = currentAccount();
+    } catch (e) {
+      if (!(e instanceof AccountChoiceError)) throw e;
+      return {
+        accounts: e.accounts.map((a) => ({ account: a, ...accountInfo(a)[service], loginInProgress: pendingLogin(service, a) })),
+        note: 'Several accounts are saved and none is chosen. Ask the user which one they mean before using the other tools.',
+      };
+    }
+  }
+  if (!name) return { signedIn: false, fix: `Call the ${service}_login tool to sign in.` };
+  return withAccount(name, () => ({ account: name, ...fn(), loginInProgress: pendingLogin(service, name) }));
+}
+
+tool(
+  'minerva_status',
+  'Check whether a Minerva login session is saved and when it expires. With several saved accounts and none chosen, it lists them all.',
+  { account: accountParam },
+  ({ account }) =>
+    statusOf('minerva', account, () => {
+      const s = loadSession();
+      if (!s) return { signedIn: false, fix: 'Call the minerva_login tool, or run `npm run login` in the minerva-mcp folder.' };
+      return { signedIn: true, userName: s.userName, savedAt: s.savedAt, expiresAt: s.expiresAt };
+    }),
+  undefined,
+  { accounts: false },
 );
 
 const waitSeconds = z
@@ -60,13 +195,44 @@ for (const [service, label] of [
   tool(
     `${service}_login`,
     `Sign in to ${label} or refresh an expired session. Call this whenever a ${label} tool says the session expired or you are not signed in. ` +
+      'Each saved account has its own sign-in; with several, pass account (the user is asked when you leave it out). ' +
       'It first refreshes silently (a few seconds, no window). If the user has to sign in, it opens the University sign-in page in their default browser: ' +
       'tell the user a browser window opened and ask them to sign in there. If the result says waitingForUser, call again after the user says they are done. ' +
       'On a machine with no display it returns the terminal command the user should run to sign in there. ' +
       'Never ask the user for their password; they type it in the browser or their own terminal.',
-    { waitSeconds },
-    ({ waitSeconds: w }) => agentLogin(service, { waitSeconds: w }),
+    {
+      waitSeconds,
+      account: accountParam,
+      ...(service === 'minerva'
+        ? { newAccount: z.boolean().optional().describe('Sign in someone else and save them as another account') }
+        : {}),
+    },
+    async ({ waitSeconds: w, account, newAccount }) => {
+      if (newAccount) return agentLogin(service, { account: null, waitSeconds: w });
+      if (account && !accountExists(account)) {
+        throw new Error(`No saved account "${account}". Saved: ${listAccounts().join(', ') || 'none'}.${service === 'minerva' ? ' Use newAccount: true to add one.' : ''}`);
+      }
+      let name = account;
+      if (!name) {
+        try {
+          name = currentAccount();
+        } catch (e) {
+          if (!(e instanceof AccountChoiceError)) throw e;
+          const allowNew = service === 'minerva';
+          const pick = await askUser(e.accounts, { purpose: `sign in to ${label}`, allowNew });
+          if (!pick) throw choiceNeeded(e.accounts, { allowNew });
+          if (pick === NEW_ACCOUNT) return agentLogin(service, { account: null, waitSeconds: w });
+          selectAccount(pick);
+          name = pick;
+        }
+      }
+      if (!name && service === 'gradescope') {
+        throw new Error('No account is saved yet. Sign in to Minerva first (minerva_login); that names the account. Then sign in to Gradescope.');
+      }
+      return agentLogin(service, { account: name, waitSeconds: w });
+    },
     { readOnlyHint: true, openWorldHint: true },
+    { accounts: false },
   );
 }
 
@@ -164,9 +330,11 @@ const gsCourse = z
 
 tool(
   'gradescope_status',
-  'Check whether a Gradescope login is saved.',
-  {},
-  () => ({ ...gradescope.status(), loginInProgress: pendingLogin('gradescope') }),
+  'Check whether a Gradescope login is saved. With several saved accounts and none chosen, it lists them all.',
+  { account: accountParam },
+  ({ account }) => statusOf('gradescope', account, () => gradescope.status()),
+  undefined,
+  { accounts: false },
 );
 
 tool(

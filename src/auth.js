@@ -5,8 +5,19 @@
 // user in the browser, except in the opt-in terminal sign-in (src/sso.js),
 // where the user types them in the terminal and they go straight into
 // Microsoft's and Duo's own forms in a hidden window.
-import { BASE_URL, SESSION_FILE, GS_BASE_URL, GS_HOST, GS_SESSION_FILE, GS_SSO_PATH } from './config.js';
-import { saveSession, minervaCookies, cookiesFor, bbRouterField } from './session.js';
+import { BASE_URL, GS_BASE_URL, GS_HOST, GS_SSO_PATH } from './config.js';
+import { saveSession, loadSession, minervaCookies, cookiesFor, bbRouterField } from './session.js';
+import {
+  sessionFile,
+  currentAccount,
+  accountExists,
+  listAccounts,
+  withAccount,
+  isPending,
+  startNewAccount,
+  finishNewAccount,
+  discardNewAccount,
+} from './accounts.js';
 import { launch, waitFor, plainCookies, chooseBrowser, hasDisplay, LOGIN_TIMEOUT_MS } from './browser.js';
 import { driveSignIn } from './sso.js';
 
@@ -26,6 +37,15 @@ const services = {
       return r.ok() ? r.json() : null;
     },
     async save(context, user) {
+      // An account's folder only ever holds that person's sign-in.
+      const account = currentAccount();
+      const before = loadSession()?.userName;
+      if (!isPending(account) && before && user.userName && before !== user.userName) {
+        throw new Error(
+          `Signed in as ${user.userName}, but this is the sign-in for account ${account}. ` +
+            `Nothing was saved. To add ${user.userName}, sign in as a new account (--new-account, or newAccount: true).`,
+        );
+      }
       const cookies = minervaCookies(await context.cookies());
       const expiresSec = Number(bbRouterField(cookies, 'expires'));
       const expiresAt = new Date(expiresSec > 0 ? expiresSec * 1000 : Date.now() + FALLBACK_TTL_MS).toISOString();
@@ -39,7 +59,7 @@ const services = {
           savedAt: new Date().toISOString(),
           expiresAt,
         },
-        SESSION_FILE,
+        sessionFile('minerva'),
       );
       return { userName: user.userName, expiresAt };
     },
@@ -57,7 +77,7 @@ const services = {
       const cookies = cookiesFor(await context.cookies(), GS_HOST);
       const remember = cookies.find((c) => c.name === 'signed_token' && c.expires > 0);
       const expiresAt = remember ? new Date(remember.expires * 1000).toISOString() : null;
-      saveSession({ cookies: plainCookies(cookies), savedAt: new Date().toISOString(), expiresAt }, GS_SESSION_FILE);
+      saveSession({ cookies: plainCookies(cookies), savedAt: new Date().toISOString(), expiresAt }, sessionFile('gradescope'));
       return { expiresAt };
     },
   },
@@ -121,6 +141,40 @@ export async function login(service, { silent = true, interactive = true, timeou
   const r = await attempt(svc, { headless: false, timeoutMs, onOpen });
   if (r.ok) return { signedIn: true, service, mode: 'interactive', browser: browserInfo, ...r.saved };
   return { signedIn: false, service, mode: 'interactive', browser: browserInfo, reason: 'Sign-in was not completed (timed out or the window was closed).' };
+}
+
+/**
+ * Signs in for one account. Without `account`, the current account is used
+ * (AccountChoiceError when several are saved and none was chosen). With
+ * `newAccount`, or when no account is saved yet, a new person signs in to
+ * Minerva with a fresh browser profile and the account is named after their
+ * Minerva username. Resolves like login(), plus `account`.
+ */
+export async function loginAccount(service, { account, newAccount = false, ...opts } = {}) {
+  if (account && !accountExists(account)) {
+    throw new Error(`No saved account "${account}". Saved: ${listAccounts().join(', ') || 'none'}. To add one, sign in as a new account.`);
+  }
+  if (newAccount || (!account && listAccounts().length === 0)) {
+    if (service !== 'minerva') {
+      throw new Error('A new account starts with a Minerva sign-in, which names it. Sign in to Minerva first, then to Gradescope for that account.');
+    }
+    const pending = startNewAccount();
+    try {
+      // A fresh profile has nothing to refresh silently.
+      const r = await withAccount(pending, () => login('minerva', { ...opts, silent: false }));
+      if (!r.signedIn) {
+        discardNewAccount(pending);
+        return r;
+      }
+      return { ...r, account: finishNewAccount(pending, r.userName), newAccount: true };
+    } catch (e) {
+      discardNewAccount(pending);
+      throw e;
+    }
+  }
+  const name = account ?? currentAccount();
+  const r = await withAccount(name, () => login(service, opts));
+  return { ...r, account: name };
 }
 
 export const LABELS = Object.fromEntries(Object.entries(services).map(([k, v]) => [k, v.label]));

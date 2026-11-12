@@ -20,7 +20,8 @@ You should get a reply within 7 days.
 - A way to send a non-GET request other than the Minerva assignment submission in `src/minerva-write.js` and the Gradescope write actions in `src/gradescope/write.js` (upload, activate, group members, regrade)
 - A way for any of those actions to send without confirmation: skipping the CLI prompt, or the MCP tools sending without `confirm: true`
 - A way for an upload to include files the user didn't name
-- Session files or the browser profile being readable by other users, or being written into the project folder
+- Session files or browser profiles being readable by other users, or being written into the project folder
+- One saved account's session or browser profile being used for, or saved into, another account
 - Path traversal in attachment downloads
 
 ## Please never share

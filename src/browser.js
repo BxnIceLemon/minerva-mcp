@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright-core';
-import { PROFILE_DIR } from './config.js';
+import { profileDir } from './accounts.js';
 
 export const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -107,10 +107,10 @@ export function chooseBrowser() {
   return { id: 'msedge', name: 'Microsoft Edge', channel: 'msedge', chromium: true, source: 'fallback', fallbackChannels: ['msedge', 'chrome'], note };
 }
 
-// One profile per browser. Edge keeps the original path so existing sign-ins
-// (including Microsoft's "Stay signed in") carry over.
+// One profile per account and browser. Edge keeps the plain name so sign-ins
+// from before accounts existed (including "Stay signed in") carry over.
 function profileFor(browser) {
-  return browser.id === 'msedge' ? PROFILE_DIR : `${PROFILE_DIR}-${browser.id}`;
+  return profileDir(browser.id);
 }
 
 export class ProfileBusyError extends Error {}

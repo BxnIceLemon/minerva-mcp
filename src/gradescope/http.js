@@ -2,14 +2,15 @@
 // with the saved session cookie. Cookies Gradescope rotates in responses are
 // written back so the saved session stays current.
 import * as cheerio from 'cheerio';
-import { GS_BASE_URL, GS_HOST, GS_SESSION_FILE } from '../config.js';
+import { GS_BASE_URL, GS_HOST } from '../config.js';
+import { sessionFile } from '../accounts.js';
 import { loadSession, saveSession } from '../session.js';
 import { SessionError } from '../client.js';
 
 const EXPIRED = 'Gradescope session expired. Call the gradescope_login tool, or run `gradescope login` (`npm run login:gradescope`).';
 
 function session() {
-  const s = loadSession(GS_SESSION_FILE);
+  const s = loadSession(sessionFile('gradescope'));
   if (!s) throw new SessionError('Not signed in to Gradescope. Call the gradescope_login tool, or run `gradescope login` (`npm run login:gradescope`).');
   return s;
 }
@@ -46,7 +47,7 @@ function remember(s, res) {
       changed = true;
     }
   }
-  if (changed) saveSession(s, GS_SESSION_FILE);
+  if (changed) saveSession(s, sessionFile('gradescope'));
 }
 
 /**

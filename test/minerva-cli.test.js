@@ -40,3 +40,36 @@ test('commands explain how to sign in when there is no session', () => {
 });
 
 test.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+test('with several accounts, commands need --account when there is no terminal to ask in', () => {
+  const multi = fs.mkdtempSync(path.join(os.tmpdir(), 'minerva-cli-accounts-'));
+  try {
+    for (const a of ['ab12cd', 'ef34gh']) fs.mkdirSync(path.join(multi, 'accounts', a), { recursive: true });
+    const run = (bin, ...args) => {
+      const env = { ...process.env, MINERVA_MCP_HOME: multi, MINERVA_NO_AUTO_LOGIN: '1' };
+      delete env.MINERVA_ACCOUNT;
+      const r = spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8', env, input: '' });
+      return { code: r.status, out: r.stdout, err: r.stderr };
+    };
+
+    for (const [bin, cmd] of [['src/minerva-cli.js', 'upcoming'], ['src/cli.js', 'courses']]) {
+      const r = run(bin, cmd);
+      assert.equal(r.code, 2, `${bin} ${cmd}`);
+      assert.match(r.err, /Several accounts are saved: ab12cd, ef34gh/);
+      assert.match(r.err, /--account NAME/);
+    }
+    assert.match(run('src/minerva-cli.js', 'upcoming', '--account', 'ab12cd').err, /Not signed in to Minerva/);
+    assert.match(run('src/cli.js', 'courses', '--account', 'ef34gh').err, /Not signed in to Gradescope/);
+    assert.equal(run('src/minerva-cli.js', 'upcoming', '--account', 'zz99zz').code, 2);
+
+    const listed = run('src/minerva-cli.js', 'accounts');
+    assert.equal(listed.code, 0);
+    assert.match(listed.out, /ab12cd/);
+    assert.match(listed.out, /ef34gh/);
+    assert.equal(run('src/minerva-cli.js', 'status').code, 0);
+    assert.equal(run('src/cli.js', 'status').code, 0);
+    assert.match(run('src/minerva-cli.js', 'status', '--account', 'ab12cd').out, /Not signed in/);
+  } finally {
+    fs.rmSync(multi, { recursive: true, force: true });
+  }
+});
