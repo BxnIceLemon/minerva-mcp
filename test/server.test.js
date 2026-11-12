@@ -16,7 +16,7 @@ before(async () => {
     new StdioClientTransport({
       command: process.execPath,
       args: ['src/server.js'],
-      env: { ...process.env, MINERVA_MCP_HOME: home },
+      env: { ...process.env, MINERVA_MCP_HOME: home, MINERVA_NO_UPDATE_CHECK: '1' },
     }),
   );
 });
@@ -33,6 +33,7 @@ async function call(name, args = {}) {
 
 const WRITE_TOOLS = [
   'minerva_submit',
+  'minerva_update',
   'gradescope_submit',
   'gradescope_request_regrade',
   'gradescope_activate_submission',
@@ -43,7 +44,7 @@ const WRITE_TOOLS = [
 test('registers every read and write tool by default', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 16);
+  assert.equal(names.filter((n) => n.startsWith('minerva_')).length, 18);
   assert.equal(names.filter((n) => n.startsWith('gradescope_')).length, 16);
   for (const n of ['minerva_login', 'minerva_list_submissions', 'gradescope_login', ...WRITE_TOOLS]) {
     assert.ok(names.includes(n), n);
@@ -59,6 +60,7 @@ test('registers every read and write tool by default', async () => {
 test('write tools refuse to send without confirm: true', async () => {
   const cases = [
     ['minerva_submit', { courseId: 'COMP1', assignment: 'CW1', files: ['x.zip'] }],
+    ['minerva_update', {}],
     ['gradescope_submit', { courseId: '1', assignmentId: '2', files: ['x.py'] }],
     ['gradescope_activate_submission', { courseId: '1', assignmentId: '2', submissionId: '3' }],
     ['gradescope_request_regrade', { courseId: '1', assignmentId: '2', question: '1.1', comment: 'x' }],

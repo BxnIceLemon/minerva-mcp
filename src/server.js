@@ -8,6 +8,7 @@ import * as minervaWrite from './minerva-write.js';
 import * as gradescope from './gradescope.js';
 import { loadSession } from './session.js';
 import { agentLogin, pendingLogin } from './login-manager.js';
+import { checkForUpdate, applyUpdate } from './update.js';
 import {
   listAccounts,
   accountInfo,
@@ -94,6 +95,35 @@ async function resolveAccount(account, purpose) {
   }
 }
 
+// The update check starts with the server. Its result is added once, to the
+// first tool call that comes after it is ready, so the agent can tell the user.
+const updateCheck = checkForUpdate();
+let updateReady = false;
+let updateShown = false;
+updateCheck.then(() => (updateReady = true));
+
+function describeUpdate(u) {
+  return (
+    `minerva-mcp update available: this copy (${u.current.commit}, ${u.current.date}) is ${u.behindBy} commit(s) behind ` +
+    `the latest version on GitHub (${u.latest.commit}, ${u.latest.date}).\n` +
+    'After you handle the request below, tell the user that an update is available, explain in plain words what the new ' +
+    'version adds compared with theirs (use the titles and details of the changes listed here), and ask whether they want ' +
+    'to update. Only if they say yes: call minerva_update with dryRun: true, show them the plan, then call it with ' +
+    'confirm: true. Never update without their yes. They must restart the MCP client afterwards.' +
+    (u.note ? `\nNote: ${u.note}` : '') +
+    `\n${JSON.stringify({ current: u.current, latest: u.latest, changes: u.changes, compareUrl: u.compareUrl }, null, 2)}`
+  );
+}
+
+async function updateNotice() {
+  if (updateShown) return null;
+  // Wait briefly on the first call; if GitHub is slow, a later call shows it.
+  const u = await Promise.race([updateCheck, new Promise((r) => setTimeout(() => r(undefined), 3000))]);
+  if (u === undefined && !updateReady) return null;
+  updateShown = true;
+  return u?.updateAvailable ? describeUpdate(u) : null;
+}
+
 /**
  * Registers a tool. Unless `accounts: false`, it takes an optional `account`
  * and runs as that account (see resolveAccount); fn gets (args, account).
@@ -107,6 +137,7 @@ function tool(name, description, inputSchema, fn, annotations, { accounts = true
       annotations: annotations ?? { readOnlyHint: name !== 'minerva_download_attachment', openWorldHint: true },
     },
     async (args) => {
+      let response;
       try {
         let result;
         if (accounts) {
@@ -116,10 +147,13 @@ function tool(name, description, inputSchema, fn, annotations, { accounts = true
         } else {
           result = await fn(args ?? {});
         }
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        response = { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (e) {
-        return { content: [{ type: 'text', text: `Error: ${e.message}` }], isError: true };
+        response = { content: [{ type: 'text', text: `Error: ${e.message}` }], isError: true };
       }
+      const notice = name === 'minerva_check_update' || name === 'minerva_update' ? null : await updateNotice();
+      if (notice) response.content.unshift({ type: 'text', text: notice });
+      return response;
     },
   );
 }
@@ -422,6 +456,32 @@ const guarded = (fn) => (args) => {
   }
   return fn({ ...rest, dryRun: Boolean(dryRun) });
 };
+
+tool(
+  'minerva_check_update',
+  'Check whether a newer version of minerva-mcp is on GitHub, and list what it adds. Use when the user asks about updates or what is new.',
+  {},
+  async () => {
+    const u = await checkForUpdate();
+    return u.updateAvailable ? { ...u, next: 'Explain the changes to the user and ask whether to update; only then call minerva_update.' } : u;
+  },
+  { readOnlyHint: true, openWorldHint: true },
+  { accounts: false },
+);
+
+tool(
+  'minerva_update',
+  'Update this copy of minerva-mcp to the latest version from GitHub (git fetch, switch to main and fast-forward, npm install). ' +
+    'Only use after the user has said yes to updating. Always call with dryRun: true first, show the plan, then call with confirm: true. ' +
+    'The user must restart the MCP client afterwards.',
+  {
+    dryRun: z.boolean().optional().describe('Show the plan without changing anything'),
+    confirm,
+  },
+  guarded(applyUpdate),
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  { accounts: false },
+);
 
 tool(
   'minerva_submit',

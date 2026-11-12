@@ -12,7 +12,7 @@ Minerva 还支持向 Ultra 作业提交文件或文字。Gradescope 还支持上
 - 可选的终端登录（`--terminal`）是唯一的例外：你在终端里输入密码，它被直接填进隐藏窗口里 Microsoft 自己的表单，不会保存、记录或发往别处；MCP 工具也从不接收密码。
 - 每个已保存的账号都有自己的专用浏览器配置（`~/.minerva-mcp/accounts/<账号>/browser-profile`），和你日常用的配置分开。工具不会读取你平时浏览器里的 cookie 或保存的密码。
 - 会话按账号保存在 `~/.minerva-mcp/accounts/<账号>/`（`session.json` 和 `gradescope-session.json`），多个人的登录状态不会混在一起，也都不在项目目录里。
-- 请求只发往 `minerva.leeds.ac.uk` 和 `www.gradescope.com`。文件下载跳转到 Blackboard 的文件域名时，会去掉 cookie。
+- 请求只发往 `minerva.leeds.ac.uk` 和 `www.gradescope.com`。文件下载跳转到 Blackboard 的文件域名时，会去掉 cookie。唯一的例外是更新检查：每次启动向 `api.github.com` 发一个请求，不带 cookie，也不带账号信息（见[更新](#更新)）。
 - Minerva 只发 GET 请求，例外只有作业提交（`minerva submit`）。Gradescope 也只发 GET 请求，例外只有 `submit`、`activate`、`add-member`、`remove-member` 和 `regrade`：
   - 在 CLI 里，这些命令都会先显示要做什么，问你 `[y/N]`，确认后才发送。加 `--dry-run` 则只显示计划，不发送。
   - 在 MCP 里，每次调用写工具都必须带 `confirm: true`，不带就不会发送。工具说明里要求 Agent 先给你看 dry-run 的结果，得到你的同意后才能发送。
@@ -117,6 +117,14 @@ minerva submit COMP3620 CW2 -m "链接：https://…"  # 只交文字
 - 带题目的作业、小组作业、需要密码或安全浏览器的作业都会被拒绝，请在浏览器里交。链接到 Gradescope 等外部工具的作业也一样。
 - 提交后，命令会检查 Minerva 回执里确实包含上传的文件。
 
+## 更新
+
+MCP 服务器每次启动时，会检查一次 GitHub 上 `main` 分支有没有比当前副本更新的版本。有的话，第一次工具调用的结果里会告诉 Agent 新增了哪些改动，Agent 会向你解释这些改动，并问你要不要更新。只有你同意后才会更新：`minerva_update` 先显示 dry run，再拉取 `main`、切换过去并运行 `npm install`。你原来所在的分支会保留；如果本地的 `main` 有 GitHub 上没有的提交，会先把它保存成一个备份分支。更新完要重启 MCP 客户端。
+
+- 检查只向 `api.github.com` 发一个请求，带上当前副本的提交 ID，不发送任何 cookie 或账号信息。
+- 需要是 git 检出的副本（`git clone`）。不是 git 副本的话无法判断版本，也就不会提示更新。
+- 设置 `MINERVA_NO_UPDATE_CHECK=1` 可以关闭检查。关闭后仍然可以让 Agent 主动检查（`minerva_check_update`）。
+
 ## 注册到 MCP 客户端
 
 大多数 MCP 客户端都支持下面这种 stdio 服务器的 JSON 配置（写在客户端的 MCP 设置文件里，或者项目里的 `.mcp.json`）：
@@ -157,6 +165,8 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 | --- | --- |
 | `minerva_list_accounts` | 列出已保存的账号，以及本次会话用的是哪个 |
 | `minerva_select_account` | 选定本次会话之后都用的账号（先问过用户） |
+| `minerva_check_update` | 检查 GitHub 上有没有新版本，并列出新增的改动 |
+| `minerva_update` | 把当前副本更新到最新版（需要 `confirm: true`） |
 | `minerva_status` | 检查是否已登录，以及会话何时过期（没选定账号时列出所有账号） |
 | `minerva_login` | 续期或重新登录 Minerva；需要你操作时会打开默认浏览器 |
 | `minerva_whoami` | 当前用户 |
@@ -195,6 +205,7 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 - `MINERVA_DOWNLOAD_DIR`：下载目录，默认 `~/Downloads/minerva`
 - `GRADESCOPE_SSO_PATH`：Gradescope 学校单点登录的路径，默认是利兹大学的。设为空值则改用 Gradescope 的普通登录页。
 - `MINERVA_ACCOUNT`：要用的已保存账号，设置后不再询问。等同于 `--account`。
+- `MINERVA_NO_UPDATE_CHECK`：设为 `1` 后，MCP 服务器启动时不再去 GitHub 检查新版本。
 - `MINERVA_NO_AUTO_LOGIN`：设为 `1` 后，CLI 不会在会话过期时自动续期。
 - `MINERVA_USERNAME`：终端登录时直接填入的用户名，不再询问。等同于 `--user`。
 - `MINERVA_MFA`：终端登录默认的 `--mfa` 方式。
