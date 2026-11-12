@@ -22,7 +22,7 @@ async function connect(answer) {
       return answer === 'decline' ? { action: 'decline' } : { action: 'accept', content: { account: answer } };
     });
   }
-  const env = { ...process.env, MINERVA_MCP_HOME: home, MINERVA_NO_UPDATE_CHECK: '1' };
+  const env = { ...process.env, MINERVA_MCP_HOME: home, MINERVA_NO_UPDATE_CHECK: '1', MINERVA_NO_AUTO_LOGIN: '1' };
   delete env.MINERVA_ACCOUNT;
   await client.connect(new StdioClientTransport({ command: process.execPath, args: ['src/server.js'], env }));
   const call = async (name, args = {}) => {

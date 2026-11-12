@@ -133,6 +133,16 @@ export function profileDir(browserId, name = currentAccount()) {
   return path.join(dirOf(name), browserId === 'msedge' ? PROFILE : `${PROFILE}-${browserId}`);
 }
 
+/** Whether an account has a browser profile, which a silent refresh needs. */
+export function hasBrowserProfile(name) {
+  if (!name) return false;
+  try {
+    return fs.readdirSync(dirOf(name)).some((e) => e === PROFILE || e.startsWith(`${PROFILE}-`));
+  } catch {
+    return false;
+  }
+}
+
 /** What is saved for one account, without any secrets. */
 export function accountInfo(name) {
   const m = readJson(path.join(dirOf(name), FILES.minerva));

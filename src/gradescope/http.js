@@ -11,7 +11,7 @@ const EXPIRED = 'Gradescope session expired. Call the gradescope_login tool, or 
 
 function session() {
   const s = loadSession(sessionFile('gradescope'));
-  if (!s) throw new SessionError('Not signed in to Gradescope. Call the gradescope_login tool, or run `gradescope login` (`npm run login:gradescope`).');
+  if (!s) throw new SessionError('Not signed in to Gradescope. Call the gradescope_login tool, or run `gradescope login` (`npm run login:gradescope`).', 'gradescope');
   return s;
 }
 
@@ -71,9 +71,9 @@ export async function request(method, path, { body, headers = {}, accept = 'text
   remember(s, res);
   if (res.status >= 300 && res.status < 400) {
     const to = new URL(res.headers.get('location'), u);
-    if (to.host === GS_HOST && (to.pathname === '/login' || to.pathname === '/')) throw new SessionError(EXPIRED);
+    if (to.host === GS_HOST && (to.pathname === '/login' || to.pathname === '/')) throw new SessionError(EXPIRED, 'gradescope');
   }
-  if (res.status === 401) throw new SessionError(EXPIRED);
+  if (res.status === 401) throw new SessionError(EXPIRED, 'gradescope');
   return res;
 }
 

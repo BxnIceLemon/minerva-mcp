@@ -7,7 +7,7 @@ import * as minerva from './minerva.js';
 import * as minervaWrite from './minerva-write.js';
 import * as gradescope from './gradescope.js';
 import { loadSession } from './session.js';
-import { agentLogin, pendingLogin } from './login-manager.js';
+import { agentLogin, pendingLogin, withSessionRefresh } from './login-manager.js';
 import { checkForUpdate, applyUpdate } from './update.js';
 import {
   listAccounts,
@@ -129,6 +129,9 @@ async function updateNotice() {
  * and runs as that account (see resolveAccount); fn gets (args, account).
  */
 function tool(name, description, inputSchema, fn, annotations, { accounts = true } = {}) {
+  // Tools registered with readOnlyHint: false change something; the rest are
+  // safe to run again (downloads included).
+  const rerun = annotations?.readOnlyHint !== false;
   server.registerTool(
     name,
     {
@@ -143,7 +146,7 @@ function tool(name, description, inputSchema, fn, annotations, { accounts = true
         if (accounts) {
           const { account, ...rest } = args ?? {};
           const acct = await resolveAccount(account, `be used for ${name}`);
-          result = await withAccount(acct, () => fn(rest, acct));
+          result = await withSessionRefresh(() => withAccount(acct, () => fn(rest, acct)), acct, { rerun });
         } else {
           result = await fn(args ?? {});
         }

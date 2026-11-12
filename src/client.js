@@ -3,7 +3,14 @@ import path from 'node:path';
 import { BASE_URL, HOST, DOWNLOAD_DIR } from './config.js';
 import { loadSession } from './session.js';
 
-export class SessionError extends Error {}
+// A missing or expired sign-in. `service` says which one ("minerva" or
+// "gradescope"), so callers can refresh the right session.
+export class SessionError extends Error {
+  constructor(message, service = 'minerva') {
+    super(message);
+    this.service = service;
+  }
+}
 
 // Signed file downloads redirect to Blackboard's alternate content host
 // (alt-<id>.leeds.ac.uk) or CDN hosts; those are followed without the session cookie.

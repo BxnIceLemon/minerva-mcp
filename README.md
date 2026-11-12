@@ -36,7 +36,7 @@ Sessions expire after a few hours, but you rarely need to sign in again:
 - **Silent refresh.** Every login first tries a hidden window. If Microsoft still remembers you ("Stay signed in"), the session is renewed in a few seconds with no window.
 - **CLI.** When a `minerva` or `gradescope` command finds its session expired, it refreshes silently and retries. If you have to sign in, it asks whether to open the sign-in page.
 - **Terminal sign-in.** On a server or over SSH, sign in without a window: see below.
-- **Agent.** The MCP server has `minerva_login` and `gradescope_login` tools. When a tool reports an expired session, the agent (any MCP client) can call them itself. If you need to act, the University sign-in page opens in your default browser and the agent asks you to finish signing in.
+- **Agent.** When an MCP tool finds its session expired, the server first renews it silently with that account's browser profile and runs the call again, so you usually notice nothing. (A tool that changes something, such as a submission, is not re-run by itself; the agent calls it again.) Only if that doesn't work does the tool report the expired session; the agent (any MCP client) then calls `minerva_login` or `gradescope_login` itself. If you need to act, the University sign-in page opens in your default browser and the agent asks you to finish signing in.
 
 ### Several accounts
 
@@ -206,7 +206,7 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 - `GRADESCOPE_SSO_PATH`: Gradescope's school sign-in path. Defaults to the University of Leeds; set it to an empty value to use the plain Gradescope login page.
 - `MINERVA_ACCOUNT`: the saved account to use, instead of being asked. Same as `--account`.
 - `MINERVA_NO_UPDATE_CHECK`: set to `1` to stop the MCP server from checking GitHub for a newer version when it starts.
-- `MINERVA_NO_AUTO_LOGIN`: set to `1` to stop the CLI from refreshing an expired session by itself.
+- `MINERVA_NO_AUTO_LOGIN`: set to `1` to stop the CLI and the MCP server from refreshing an expired session by themselves.
 - `MINERVA_USERNAME`: the username terminal sign-in fills in, instead of asking. Same as `--user`.
 - `MINERVA_MFA`: the default `--mfa` method for terminal sign-in.
 
