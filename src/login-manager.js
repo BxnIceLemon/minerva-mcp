@@ -4,6 +4,8 @@
 // agent is told to ask the user to complete it. Each sign-in is for one saved
 // account, or for a new account (newAccount).
 import { loginAccount, LABELS } from './auth.js';
+import { hasBrowserProfile } from './accounts.js';
+import { SessionError } from './client.js';
 
 const jobs = new Map();
 // A finished sign-in waits this long for the agent to come back for its result.
@@ -44,6 +46,45 @@ function start(service, account) {
     }));
   jobs.set(keyOf(service, account), job);
   return job;
+}
+
+// Silent refreshes, one per service and account at a time. A failed one isn't
+// tried again for a while, so a run of tool calls doesn't keep launching a
+// hidden browser.
+const refreshes = new Map();
+const failedAt = new Map();
+const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+
+/**
+ * Tries to renew an expired session for an existing account in a hidden
+ * window, without any user action. Resolves to true when it worked. Skipped
+ * (false) with no profile to refresh from, while a sign-in for that account
+ * is waiting for the user, after a recent failure, or with
+ * MINERVA_NO_AUTO_LOGIN=1.
+ */
+export function silentRefresh(service, account) {
+  if (process.env.MINERVA_NO_AUTO_LOGIN === '1' || !account || !hasBrowserProfile(account)) return Promise.resolve(false);
+  const key = keyOf(service, account);
+  if (Date.now() - (failedAt.get(key) ?? -Infinity) < REFRESH_COOLDOWN_MS) return Promise.resolve(false);
+  if (pendingLogin(service, account)) return Promise.resolve(false);
+  let p = refreshes.get(key);
+  if (!p) {
+    p = queue = queue
+      .catch(() => {})
+      .then(() => runLogin(service, { account, interactive: false }))
+      .then(
+        (r) => Boolean(r?.signedIn),
+        () => false,
+      )
+      .then((ok) => {
+        if (ok) failedAt.delete(key);
+        else failedAt.set(key, Date.now());
+        refreshes.delete(key);
+        return ok;
+      });
+    refreshes.set(key, p);
+  }
+  return p;
 }
 
 /** A pending login for `service` and `account` (null: a new account), if one is running. */
@@ -97,4 +138,21 @@ export async function agentLogin(service, { account = null, waitSeconds = 45 } =
     };
   }
   return { signedIn: false, account, message: `${r.reason ?? 'Sign-in was not completed.'} Ask the user whether to try again.` };
+}
+
+// When a call finds its session expired, renew it silently (the account's own
+// browser profile usually still has Microsoft's "Stay signed in") and, for
+// tools that only read, run the call again. Tools that change something are
+// not re-run on their own: the agent is told to call again. Only when the
+// silent refresh can't work does the agent see the error and call *_login.
+export async function withSessionRefresh(run, account, { rerun }) {
+  try {
+    return await run();
+  } catch (e) {
+    if (!(e instanceof SessionError) || !account) throw e;
+    if (!(await silentRefresh(e.service, account))) throw e;
+    if (rerun) return run();
+    const label = e.service === 'gradescope' ? 'Gradescope' : 'Minerva';
+    throw new Error(`The ${label} session for ${account} had expired and was renewed silently; nothing was sent. Call this tool again to continue.`);
+  }
 }

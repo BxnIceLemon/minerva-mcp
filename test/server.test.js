@@ -16,7 +16,7 @@ before(async () => {
     new StdioClientTransport({
       command: process.execPath,
       args: ['src/server.js'],
-      env: { ...process.env, MINERVA_MCP_HOME: home, MINERVA_NO_UPDATE_CHECK: '1' },
+      env: { ...process.env, MINERVA_MCP_HOME: home, MINERVA_NO_UPDATE_CHECK: '1', MINERVA_NO_AUTO_LOGIN: '1' },
     }),
   );
 });

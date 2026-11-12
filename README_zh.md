@@ -36,7 +36,7 @@ npm run check              # 打印你的名字和当前课程列表
 - **静默续期**：每次登录都会先在后台的隐藏窗口里尝试。只要 Microsoft 还记得你（“保持登录”），几秒内就能续上，不会弹出窗口。
 - **CLI**：`minerva` 和 `gradescope` 命令发现会话过期时，会先静默续期，再自动重试。如果需要你亲自登录，会先问你要不要打开登录页。
 - **终端登录**：在服务器上或通过 SSH 时，可以不开窗口登录，见下文。
-- **Agent**：MCP 服务器提供 `minerva_login` 和 `gradescope_login` 两个工具。其他工具报告会话过期时，Agent（任何 MCP 客户端）可以自己调用它们。需要你操作时，学校的登录页会在默认浏览器里打开，Agent 会提示你完成登录。
+- **Agent**：MCP 工具发现会话过期时，服务器会先用该账号的浏览器配置静默续期，再把这次调用重跑一遍，你通常察觉不到。（会改动数据的工具，比如提交作业，不会自动重跑，由 Agent 再调用一次。）只有静默续期不成功时，工具才会报告会话过期，Agent（任何 MCP 客户端）再自己调用 `minerva_login` 或 `gradescope_login`。需要你操作时，学校的登录页会在默认浏览器里打开，Agent 会提示你完成登录。
 
 ### 多个账号
 
@@ -206,7 +206,7 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 - `GRADESCOPE_SSO_PATH`：Gradescope 学校单点登录的路径，默认是利兹大学的。设为空值则改用 Gradescope 的普通登录页。
 - `MINERVA_ACCOUNT`：要用的已保存账号，设置后不再询问。等同于 `--account`。
 - `MINERVA_NO_UPDATE_CHECK`：设为 `1` 后，MCP 服务器启动时不再去 GitHub 检查新版本。
-- `MINERVA_NO_AUTO_LOGIN`：设为 `1` 后，CLI 不会在会话过期时自动续期。
+- `MINERVA_NO_AUTO_LOGIN`：设为 `1` 后，CLI 和 MCP 服务器都不会在会话过期时自动续期。
 - `MINERVA_USERNAME`：终端登录时直接填入的用户名，不再询问。等同于 `--user`。
 - `MINERVA_MFA`：终端登录默认的 `--mfa` 方式。
 
