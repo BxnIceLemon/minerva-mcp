@@ -12,7 +12,7 @@ On Minerva you can also submit files or text to Ultra assignments. On Gradescope
 - The optional terminal sign-in (`--terminal`) is the one exception: you type your password in the terminal and it is filled straight into Microsoft's own form in a hidden window. It is never saved, logged or sent anywhere else, and the MCP tools never accept a password.
 - The browser runs with a dedicated profile for each saved account (`~/.minerva-mcp/accounts/<account>/browser-profile`), separate from your everyday profile. The tools never read your normal browser's cookies or saved passwords.
 - Sessions are saved per account in `~/.minerva-mcp/accounts/<account>/` (`session.json` and `gradescope-session.json`), so several people's sign-ins never mix. None of these are inside the project folder.
-- Requests only go to `minerva.leeds.ac.uk` and `www.gradescope.com`. When a file download redirects to Blackboard's file host, the session cookie is dropped.
+- Requests only go to `minerva.leeds.ac.uk` and `www.gradescope.com`. When a file download redirects to Blackboard's file host, the session cookie is dropped. The one exception is the update check: a single request to `api.github.com` per start, with no cookies or account data (see [Updates](#updates)).
 - Minerva: only GET requests, except assignment submissions (`minerva submit`). Gradescope: only GET requests, except `submit`, `activate`, `add-member`, `remove-member` and `regrade`:
   - In the CLI, each one shows what it will do and ask `[y/N]` before sending. `--dry-run` only shows the plan.
   - In MCP, every write tool call needs `confirm: true`, and the agent is told to show you a dry run and get your yes first. Without `confirm: true` nothing is sent.
@@ -117,6 +117,14 @@ minerva submit COMP3620 CW2 -m "Link: https://…"  # text only
 - Assignments with questions, group assignments, and ones that need a password or a secure browser are refused; use the browser for those. So are items that link to Gradescope or another tool.
 - After submitting, the command checks that Minerva's receipt lists the uploaded files.
 
+## Updates
+
+Each time the MCP server starts, it checks once whether GitHub's `main` branch has a newer version than the copy it runs from. If it does, the first tool answer tells the agent which changes are new. The agent then explains them and asks whether you want to update. It only updates after your yes: `minerva_update` shows a dry run, then fetches `main`, switches to it and runs `npm install`. A branch you were on is kept, and a local `main` with commits that aren't on GitHub is kept as a backup branch first. Restart your MCP client afterwards.
+
+- The check is one request to `api.github.com` with the commit id this copy runs. No cookies or account data are sent.
+- It needs a git checkout (`git clone`). Copies without git can't tell their version, so they are never flagged.
+- Set `MINERVA_NO_UPDATE_CHECK=1` to turn the check off. You can still ask the agent to check (`minerva_check_update`).
+
 ## Add to an MCP client
 
 Most MCP clients accept a stdio server in this JSON form (in the client's MCP settings file, or a project's `.mcp.json`):
@@ -157,6 +165,8 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 | --- | --- |
 | `minerva_list_accounts` | List saved accounts and which one this session uses |
 | `minerva_select_account` | Choose the account for the rest of the session (after asking the user) |
+| `minerva_check_update` | Check GitHub for a newer version and list what it adds |
+| `minerva_update` | Update this copy to the latest version (needs `confirm: true`) |
 | `minerva_status` | Check whether you're signed in and when the session expires (lists every account when none is chosen) |
 | `minerva_login` | Refresh or start a Minerva sign-in; opens your default browser if you need to act |
 | `minerva_whoami` | Show the signed-in user |
@@ -195,6 +205,7 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 - `MINERVA_DOWNLOAD_DIR`: the download folder. Defaults to `~/Downloads/minerva`.
 - `GRADESCOPE_SSO_PATH`: Gradescope's school sign-in path. Defaults to the University of Leeds; set it to an empty value to use the plain Gradescope login page.
 - `MINERVA_ACCOUNT`: the saved account to use, instead of being asked. Same as `--account`.
+- `MINERVA_NO_UPDATE_CHECK`: set to `1` to stop the MCP server from checking GitHub for a newer version when it starts.
 - `MINERVA_NO_AUTO_LOGIN`: set to `1` to stop the CLI from refreshing an expired session by itself.
 - `MINERVA_USERNAME`: the username terminal sign-in fills in, instead of asking. Same as `--user`.
 - `MINERVA_MFA`: the default `--mfa` method for terminal sign-in.

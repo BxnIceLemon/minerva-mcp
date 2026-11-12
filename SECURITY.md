@@ -17,6 +17,7 @@ You should get a reply within 7 days.
 ## What counts
 
 - A way for session cookies to leave `minerva.leeds.ac.uk` or `www.gradescope.com`
+- The update check sending anything to `api.github.com` beyond the commit id, or updating without the user's confirmation
 - A way to send a non-GET request other than the Minerva assignment submission in `src/minerva-write.js` and the Gradescope write actions in `src/gradescope/write.js` (upload, activate, group members, regrade)
 - A way for any of those actions to send without confirmation: skipping the CLI prompt, or the MCP tools sending without `confirm: true`
 - A way for an upload to include files the user didn't name
