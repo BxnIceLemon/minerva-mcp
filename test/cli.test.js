@@ -22,6 +22,7 @@ test('prints help', () => {
   assert.equal(r.code, 0);
   assert.match(r.out, /gradescope <command>/);
   assert.match(r.out, /submit <course> <assignment> <file\.\.\.>/);
+  assert.match(r.out, /select-pages <course> <assignment> <question=pages\.\.\.>/);
 });
 
 test('unknown commands and missing arguments are usage errors', () => {
@@ -30,6 +31,10 @@ test('unknown commands and missing arguments are usage errors', () => {
   assert.equal(r.code, 2);
   assert.match(r.err, /Usage: gradescope results/);
   assert.equal(cli('regrade', 'C', 'A', '1.1').code, 2); // no -m
+  assert.equal(cli('select-pages', 'C', 'A').code, 2); // no question=pages
+  const bad = cli('select-pages', 'C', 'A', 'oops');
+  assert.equal(bad.code, 2);
+  assert.match(bad.err, /should look like 1.2=3-4/);
 });
 
 test('commands explain how to sign in when there is no session', () => {

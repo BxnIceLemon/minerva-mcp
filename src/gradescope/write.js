@@ -1,13 +1,14 @@
 // Every action that changes anything on Gradescope lives here: uploading a
-// submission, making an earlier submission active, adding or removing group
-// members, and creating or updating a regrade request. Each one validates
+// submission, assigning PDF pages to questions, making an earlier submission
+// active, adding or removing group members, and creating or updating a
+// regrade request. Each one validates
 // everything first and supports dryRun, which returns the plan without sending.
 import fs from 'node:fs';
 import path from 'node:path';
 import { GS_BASE_URL } from '../config.js';
 import { request, csrfToken } from './http.js';
-import { findAssignment, resolveSubmission, submissionProps, submissionHistory } from './read.js';
-import { shapeSubmission, shapeGroup, planActivate, planAddMembers, planRemoveMember } from './parse.js';
+import { findAssignment, resolveSubmission, submissionProps, submissionHistory, pageSelectionProps } from './read.js';
+import { shapeSubmission, shapeGroup, planActivate, planAddMembers, planRemoveMember, planPageSelection, shapePageSelection } from './parse.js';
 import { expandZip } from './zip.js';
 
 const MAX_FILE_BYTES = 100 * 1024 * 1024; // Gradescope's upload limit per file
@@ -153,7 +154,8 @@ export async function submit({ courseId, assignmentId, files, leaderboardName, u
     ...plan,
     submissionId,
     url,
-    // Variable-length PDFs need pages assigned to questions in the browser.
+    // Variable-length PDFs need pages assigned to questions before grading:
+    // use selectPages (gradescope_select_pages / `gradescope select-pages`).
     needsPageSelection: /select_pages/.test(url) || format === 'variable_length',
   };
 }
@@ -311,3 +313,46 @@ export async function removeGroupMember({ courseId, assignmentId, submissionId, 
   if (!res.ok) throw await failure(res, 'remove the group member');
   return { removed: true, ...plan };
 }
+
+/**
+ * Assigns pages of a PDF submission to questions, like the "Select pages"
+ * screen after uploading a variable-length PDF. `pages` maps a question
+ * (number like "1.2", id, or a unique part of its title) to page numbers
+ * ([1, 2] or "1-2, 4"). Questions left out keep their pages, unless
+ * `replace` is set.
+ */
+export async function selectPages({ courseId, assignmentId, submissionId, pages, replace = false, dryRun = false }) {
+  const { course, assignment, sub, path: selectPath, p } = await pageSelectionProps({ courseId, assignmentId, submissionId });
+  const plan = planPageSelection(p, pages, { replace });
+  const { request: body, ...shown } = plan;
+  const summary = {
+    assignment: assignment.title,
+    submissionId: String(sub),
+    pdf: { fileName: p.pdfAttachment?.filename, pageCount: p.pdfAttachment?.page_count },
+    ...shown,
+    url: `${GS_BASE_URL}${selectPath}`,
+  };
+  if (dryRun) return { dryRun: true, ...summary };
+  if (!plan.changes.length) return { saved: false, reason: 'Nothing to change; the pages are already assigned like that.', ...summary };
+
+  const token = await csrfToken(selectPath);
+  const res = await request('POST', p.urls?.update_pages_path ?? `${selectPath.replace(/select_pages$/, 'update_pages')}`, {
+    body: new URLSearchParams(body),
+    accept: 'application/json',
+    headers: XHR(token),
+  });
+  if (!res.ok) throw await failure(res, 'save the page selection');
+
+  // Read the screen again and check Gradescope stored what was planned.
+  const after = shapePageSelection((await pageSelectionProps({ courseId: course, assignmentId: assignment.assignmentId, submissionId: sub })).p);
+  const mismatch = plan.final.filter((f) => {
+    const q = after.questions.find((x) => x.number === f.question);
+    return (q?.pages ?? []).join() !== f.pages.join();
+  });
+  if (mismatch.length) {
+    throw new Error(`Gradescope accepted the request, but questions ${mismatch.map((m) => m.question).join(', ')} don't show the planned pages. Check it in the browser: ${summary.url}`);
+  }
+  const next = await res.json().catch(() => ({}));
+  return { saved: true, ...summary, submissionUrl: next.path ? new URL(next.path, GS_BASE_URL).toString() : undefined };
+}
+

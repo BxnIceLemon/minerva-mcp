@@ -30,12 +30,15 @@ Submissions
   comments <course> <assignment>          Rubric items, grader comments and regrade threads
   history <course> <assignment>           All your submissions to an assignment
   members <course> <assignment>           Who is in your group submission
+  pages <course> <assignment>             Which PDF pages are assigned to which question
 
 Actions (ask for confirmation)
   submit <course> <assignment> <file...>  Upload files (code, PDF or document assignments)
       [--leaderboard NAME] [--wait] [--dry-run] [--yes]
       A .zip is unpacked and its files uploaded one by one, like the website
       does; --keep-zip uploads the .zip itself instead.
+  select-pages <course> <assignment> <question=pages...>
+      Assign PDF pages to questions, e.g. 1.1=1-2 1.2=3 [--replace] [--dry-run] [--yes]
   activate <course> <assignment> <submission-id>
       Make an earlier submission the active one [--dry-run] [--yes]
   regrade <course> <assignment> <question> -m TEXT
@@ -67,6 +70,7 @@ const options = {
   timeout: { type: 'string' },
   wait: { type: 'boolean' },
   'dry-run': { type: 'boolean' },
+  replace: { type: 'boolean' },
   yes: { type: 'boolean', short: 'y' },
   json: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
@@ -117,6 +121,30 @@ async function confirmed(o, planFn, runFn, { show, question, done }) {
   const r = await runFn();
   if (o.json) return r;
   console.log(done(r));
+}
+
+function fmtPages(list) {
+  if (!list?.length) return 'none';
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    let j = i;
+    while (j + 1 < list.length && list[j + 1] === list[j] + 1) j++;
+    out.push(j > i ? `${list[i]}-${list[j]}` : String(list[i]));
+    i = j;
+  }
+  return out.join(', ');
+}
+
+function printPageSelection(r) {
+  console.log(`${r.assignment}  (submission ${r.submissionId}, ${r.pdf.fileName}, ${r.pdf.pageCount} pages)`);
+  if (!r.canChange) console.log("Gradescope no longer lets you change these pages.");
+  for (const q of r.questions) {
+    if (q.assignable) console.log(`  ${q.number.padEnd(5)} ${q.title}: ${fmtPages(q.pages)}`);
+    else console.log(`${q.number} ${q.title}`);
+  }
+  if (r.unassignedQuestions.length) console.log(`Without pages: ${r.unassignedQuestions.join(', ')}`);
+  if (r.unusedPages.length) console.log(`Pages not used: ${fmtPages(r.unusedPages)}`);
+  console.log(r.url);
 }
 
 function printSubmission(s) {
@@ -289,6 +317,35 @@ const commands = {
     for (const m of r.members) console.log(`  ${m.name ?? m.userId}${m.you ? ' (you)' : ''}${m.uploader ? ' [uploader]' : ''}`);
   },
 
+  async pages(a, o) {
+    need(a, 2, 'pages <course> <assignment> [--submission ID]');
+    const r = await gs.getPageSelection({ courseId: a[0], assignmentId: a[1], submissionId: o.submission });
+    if (o.json) return r;
+    printPageSelection(r);
+  },
+
+  async 'select-pages'(a, o) {
+    need(a, 3, 'select-pages <course> <assignment> <question=pages...> [--replace] [--dry-run] [--yes]');
+    const pages = {};
+    for (const spec of a.slice(2)) {
+      const i = spec.lastIndexOf('=');
+      if (i < 1) throw new UsageError(`"${spec}" should look like 1.2=3-4`);
+      pages[spec.slice(0, i)] = spec.slice(i + 1);
+    }
+    const args = { courseId: a[0], assignmentId: a[1], submissionId: o.submission, pages, replace: Boolean(o.replace) };
+    return confirmed(o, () => gs.selectPages({ ...args, dryRun: true }), () => gs.selectPages(args), {
+      show: (p) => {
+        console.log(`${p.assignment}  (submission ${p.submissionId}, ${p.pdf.fileName}, ${p.pdf.pageCount} pages)`);
+        if (!p.changes.length) console.log('No change: the pages are already assigned like that.');
+        for (const c of p.changes) console.log(`  ${c.question} ${c.title}: ${fmtPages(c.from)} -> ${fmtPages(c.to)}`);
+        if (p.unassignedQuestions.length) console.log(`Still without pages: ${p.unassignedQuestions.join(', ')}`);
+        if (p.unusedPages.length) console.log(`Pages not used: ${fmtPages(p.unusedPages)}`);
+      },
+      question: 'Save this page assignment?',
+      done: (r) => (r.saved ? `Pages saved: ${r.url}` : r.reason),
+    });
+  },
+
   async activate(a, o) {
     need(a, 3, 'activate <course> <assignment> <submission-id> [--dry-run] [--yes]');
     const args = { courseId: a[0], assignmentId: a[1], submissionId: a[2] };
@@ -350,7 +407,11 @@ const commands = {
     const r = await gs.submit(args);
     if (!o.json) {
       console.log(`Submitted: ${r.url}`);
-      if (r.needsPageSelection) console.log('Open the link to assign pages to questions; Gradescope needs that before grading.');
+      if (r.needsPageSelection) {
+        console.log('Gradescope needs pages assigned to questions before grading:');
+        console.log(`  gradescope pages ${a[0]} ${r.submissionId ? `${a[1]} --submission ${r.submissionId}` : a[1]}`);
+        console.log(`  gradescope select-pages ${a[0]} ${a[1]} 1.1=1-2 1.2=3 …  (or open the link above)`);
+      }
     }
     if (o.wait && r.format === 'code') {
       return commands.results([a[0], a[1]], { ...o, submission: r.submissionId, wait: true });

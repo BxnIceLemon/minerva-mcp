@@ -4,7 +4,7 @@ import { GS_BASE_URL } from '../config.js';
 import { sessionFile } from '../accounts.js';
 import { loadSession } from '../session.js';
 import { html, json } from './http.js';
-import { parseCourses, parseAssignments, reactProps, shapeSubmission, shapeHistory, shapeGroup } from './parse.js';
+import { parseCourses, parseAssignments, reactProps, shapeSubmission, shapeHistory, shapeGroup, shapePageSelection } from './parse.js';
 
 export function status() {
   const s = loadSession(sessionFile('gradescope'));
@@ -206,3 +206,19 @@ export async function upcoming({ days = 14 } = {}) {
   items.sort((x, y) => String(x.due ?? '').localeCompare(String(y.due ?? '')));
   return { terms, coursesChecked: current.length, items };
 }
+
+/** The raw "Select pages" data of a PDF submission, and where it lives. */
+export async function pageSelectionProps({ courseId, assignmentId, submissionId }) {
+  const { course, assignment, sub } = await resolveSubmission({ courseId, assignmentId, submissionId });
+  const path = `/courses/${course}/assignments/${assignment.assignmentId}/submissions/${sub}/select_pages`;
+  const p = reactProps(await html(path), 'SelectPages');
+  if (!p) throw new Error(`"${assignment.title}" has no pages to assign; only PDF assignments with variable-length answers do`);
+  return { course, assignment, sub, path, p };
+}
+
+/** Which pages of a PDF submission belong to which question, as on the "Select pages" screen. */
+export async function getPageSelection(args) {
+  const { path, p } = await pageSelectionProps(args);
+  return shapePageSelection(p, `${GS_BASE_URL}${path}`);
+}
+

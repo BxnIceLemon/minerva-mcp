@@ -276,3 +276,118 @@ export function planActivate(history, submissionId) {
   }
   return target;
 }
+
+// --- Page selection ("Select pages") for variable-length PDF submissions.
+
+function sortedPages(p) {
+  return [...(p.pdfAttachment?.pages ?? [])].sort((a, b) => a.number - b.number);
+}
+
+function currentPages(p, questionId) {
+  const qs = (p.questionSubmissions ?? []).find((q) => q.question_id === questionId);
+  return [...(qs?.data?.pages ?? [])].map(Number).sort((a, b) => a - b);
+}
+
+/** The questions of a PDF submission and which pages each one has now. */
+export function shapePageSelection(p, url) {
+  const pageCount = p.pdfAttachment?.page_count ?? sortedPages(p).length;
+  const questions = (p.questions ?? []).map((q) => ({
+    questionId: q.id,
+    number: q.full_index,
+    title: q.title,
+    points: q.weight != null ? Number(q.weight) : undefined,
+    assignable: Boolean(q.assignable),
+    pages: q.assignable ? currentPages(p, q.id) : undefined,
+  }));
+  const used = new Set(questions.flatMap((q) => q.pages ?? []));
+  return {
+    assignment: p.assignment?.title,
+    submissionId: p.assignmentSubmission?.id,
+    canChange: !p.cannotReselectPages,
+    pdf: { fileName: p.pdfAttachment?.filename, pageCount, status: p.pdfAttachment?.status_string ?? p.pdfAttachment?.status },
+    questions,
+    unassignedQuestions: questions.filter((q) => q.assignable && !q.pages.length).map((q) => q.number),
+    unusedPages: Array.from({ length: pageCount }, (_, i) => i + 1).filter((n) => !used.has(n)),
+    url,
+  };
+}
+
+/** "1-3, 5" or [1, 2, 3] or 4 → [1, 2, 3, 5]. */
+export function parsePageList(v) {
+  if (Array.isArray(v)) return v.map((x) => Number(x));
+  if (typeof v === 'number') return [v];
+  const out = [];
+  for (const part of String(v ?? '').split(',').map((s) => s.trim()).filter(Boolean)) {
+    const m = part.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (m) {
+      const [a, b] = [Number(m[1]), Number(m[2])];
+      if (a > b) throw new Error(`Page range "${part}" runs backwards`);
+      for (let i = a; i <= b; i++) out.push(i);
+    } else if (/^\d+$/.test(part)) {
+      out.push(Number(part));
+    } else {
+      throw new Error(`"${part}" is not a page number or range like 2-4`);
+    }
+  }
+  return out;
+}
+
+function matchQuestion(questions, key) {
+  const k = String(key).trim();
+  const exact = questions.find((q) => q.full_index === k || String(q.id) === k);
+  if (exact) return exact;
+  const byTitle = questions.filter((q) => q.title?.toLowerCase().includes(k.toLowerCase()));
+  if (byTitle.length === 1) return byTitle[0];
+  if (!byTitle.length) throw new Error(`No question matches "${k}". Use a number like ${questions.find((q) => q.assignable)?.full_index ?? '1.1'}`);
+  throw new Error(`"${k}" matches several questions: ${byTitle.map((q) => q.full_index).join(', ')}`);
+}
+
+/**
+ * Checks which pages to give which questions and builds Gradescope's request.
+ * `assign` maps a question (number like "1.2", id, or a unique part of its
+ * title) to page numbers; questions left out keep their pages. With
+ * `replace`, questions left out lose their pages.
+ */
+export function planPageSelection(p, assign, { replace = false } = {}) {
+  if (p.cannotReselectPages) throw new Error('Gradescope no longer lets you change the pages of this submission');
+  const pages = sortedPages(p);
+  if (!pages.length) throw new Error('This submission has no PDF pages to assign (is the PDF still processing?)');
+  const entries = Object.entries(assign ?? {});
+  if (!entries.length) throw new Error('Say which pages go with which question, e.g. {"1.1": "1-2", "1.2": [3]}');
+  const idByNumber = new Map(pages.map((pg) => [pg.number, pg.id]));
+  const questions = p.questions ?? [];
+  const next = new Map(questions.filter((q) => q.assignable).map((q) => [q.id, replace ? [] : currentPages(p, q.id)]));
+
+  const seen = new Set();
+  for (const [key, value] of entries) {
+    const q = matchQuestion(questions, key);
+    if (!q.assignable) {
+      const kids = questions.filter((c) => c.parent_id === q.id).map((c) => c.full_index);
+      throw new Error(`Question ${q.full_index} has parts; give pages to ${kids.join(', ') || 'its parts'} instead`);
+    }
+    if (seen.has(q.id)) throw new Error(`Question ${q.full_index} is given more than once`);
+    seen.add(q.id);
+    const list = parsePageList(value);
+    for (const n of list) {
+      if (!Number.isInteger(n) || !idByNumber.has(n)) throw new Error(`Page ${n} doesn't exist; the PDF has pages 1-${pages.length}`);
+    }
+    next.set(q.id, [...new Set(list)].sort((a, b) => a - b));
+  }
+
+  const changes = [];
+  const pagesForQuestion = {};
+  for (const q of questions.filter((x) => x.assignable)) {
+    const to = next.get(q.id);
+    const from = currentPages(p, q.id);
+    if (from.join() !== to.join()) changes.push({ question: q.full_index, title: q.title, from, to });
+    pagesForQuestion[q.id] = to.map((n) => idByNumber.get(n));
+  }
+  const used = new Set([...next.values()].flat());
+  return {
+    changes,
+    final: questions.filter((q) => q.assignable).map((q) => ({ question: q.full_index, title: q.title, pages: next.get(q.id) })),
+    unassignedQuestions: questions.filter((q) => q.assignable && !next.get(q.id).length).map((q) => q.full_index),
+    unusedPages: pages.map((pg) => pg.number).filter((n) => !used.has(n)),
+    request: { pages_for_question: JSON.stringify(pagesForQuestion), pages: JSON.stringify(p.pdfAttachment.pages) },
+  };
+}
