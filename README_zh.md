@@ -4,7 +4,7 @@
 
 非官方的利兹大学 Minerva（Blackboard Learn Ultra）和 Gradescope 工具，包含一个 MCP 服务器和一个命令行工具。思路参考 [campus-cli](https://github.com/alejooroncoy/campus-cli)：你在真实浏览器里自己登录，工具复用这个会话。Minerva 的数据来自 Blackboard 的 REST API。Gradescope 没有给学生开放的 API，所以用的是它网站本身调用的页面和 JSON 接口。
 
-Minerva 还支持向 Ultra 作业提交文件或文字。Gradescope 还支持上传和重新提交、把以前的某次提交设为当前有效提交、增删小组成员、提交和修改重评申请，整个项目里会改动数据的只有这些操作。
+Minerva 还支持向 Ultra 作业提交文件或文字。Gradescope 还支持上传和重新提交、给 PDF 的每道题分配页面、把以前的某次提交设为当前有效提交、增删小组成员、提交和修改重评申请，整个项目里会改动数据的只有这些操作。
 
 ## 安全性
 
@@ -80,6 +80,8 @@ gradescope submit COMP3620 Perceptron perceptron.py --wait   # 上传，并等�
 gradescope results COMP3620 Perceptron            # autograder 每个测试的结果和输出
 gradescope comments COMP3620 Perceptron           # rubric、评语、重评对话
 gradescope history COMP3620 Perceptron            # 你对这个作业的所有提交
+gradescope pages COMP3620 "Lab 2"                 # 每道题分配了 PDF 的哪几页
+gradescope select-pages COMP3620 "Lab 2" 1.1=1-2 1.2=3 2=4,6   # 分配页面（没列出的题保持不变）
 gradescope activate COMP3620 Perceptron 123456789 # 把以前的某次提交设为当前有效提交
 gradescope members COMP2850 "Team Project"         # 小组提交里有哪些人
 gradescope add-member COMP2850 "Team Project" "Ada Lovelace"   # 加入同学（姓名、邮箱或 ID）
@@ -94,7 +96,7 @@ gradescope regrade COMP3620 "Lab 2" 1.3 -m "我的答案符合题目 (b) 部分�
 `submit` 支持 Gradescope 的三种上传方式：
 
 - **代码作业**：可以上传任意多个文件。`.zip` 会先在本地解压，再带着目录路径逐个上传，和网页上传完全一样（会跳过 `__MACOSX/` 和 `.DS_Store`）。如果作业确实要求交 zip 本身，加 `--keep-zip`。
-- **PDF 作业**：只能上传一个 PDF。如果是不定页数的 PDF 作业，上传后还要在浏览器里给每道题分配页面，命令会输出对应的链接。
+- **PDF 作业**：只能上传一个 PDF。如果是不定页数的 PDF 作业，上传后 Gradescope 还需要知道每道题在哪几页：`gradescope pages` 查看，`gradescope select-pages` 分配（也可以打开命令输出的链接在浏览器里分配）。
 - **文档作业**：只能上传一个文件。
 
 在线作答的作业（测验）只能在浏览器里完成。
@@ -191,8 +193,10 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 | `gradescope_get_results` | autograder 测试结果；`waitSeconds` 可以等它跑完 |
 | `gradescope_get_comments` | 老师的反馈，以及重评申请和老师的回复 |
 | `gradescope_list_submissions` | 某个作业的所有提交，标出当前有效的那次，以及哪些可以切换 |
+| `gradescope_get_page_selection` | PDF 提交里每道题分配了哪几页，以及还有哪些没分配 |
 | `gradescope_list_group_members` | 小组提交里有哪些人、人数上限、还能不能改 |
 | `gradescope_submit` | 上传或重新提交（需要 `confirm: true`） |
+| `gradescope_select_pages` | 给 PDF 的每道题分配页面，即上传不定页数 PDF 之后的那一步（需要 `confirm: true`） |
 | `gradescope_activate_submission` | 把以前的某次提交设为当前有效提交（需要 `confirm: true`） |
 | `gradescope_add_group_members` | 把同学加入小组提交（需要 `confirm: true`） |
 | `gradescope_remove_group_member` | 移除小组成员，或自己退出（需要 `confirm: true`） |

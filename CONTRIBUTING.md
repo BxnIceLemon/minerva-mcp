@@ -12,7 +12,7 @@ Thanks for helping. A few rules keep this project safe for everyone who signs in
 
 ## Ground rules
 
-- **Writes stay narrow.** On Minerva the only action that changes anything is submitting to an Ultra assignment, in `src/minerva-write.js`. On Gradescope they are upload/resubmit, activating an earlier submission, adding or removing group members, and regrade requests, all in `src/gradescope/write.js`. A new write action needs a strong reason, and it must:
+- **Writes stay narrow.** On Minerva the only action that changes anything is submitting to an Ultra assignment, in `src/minerva-write.js`. On Gradescope they are upload/resubmit, assigning PDF pages to questions, activating an earlier submission, adding or removing group members, and regrade requests, all in `src/gradescope/write.js`. A new write action needs a strong reason, and it must:
   - support a dry run
   - ask for confirmation in the CLI
   - in MCP, require `confirm: true` (and send nothing without it)

@@ -4,7 +4,7 @@
 
 An unofficial MCP server and command-line tool for the University of Leeds' Minerva (Blackboard Learn Ultra) and Gradescope. It follows the approach of [campus-cli](https://github.com/alejooroncoy/campus-cli). You sign in yourself in a real browser window, and the tools reuse that session. Minerva data comes from the Blackboard REST API. Gradescope data comes from the same pages and JSON its website uses, because Gradescope has no API for students.
 
-On Minerva you can also submit files or text to Ultra assignments. On Gradescope you can also upload and resubmit, make an earlier submission the active one, add or remove group members, and send or edit regrade requests. These are the only actions that change anything.
+On Minerva you can also submit files or text to Ultra assignments. On Gradescope you can also upload and resubmit, assign PDF pages to questions, make an earlier submission the active one, add or remove group members, and send or edit regrade requests. These are the only actions that change anything.
 
 ## Security
 
@@ -80,6 +80,8 @@ gradescope submit COMP3620 Perceptron perceptron.py --wait   # upload, then wait
 gradescope results COMP3620 Perceptron            # autograder tests with output
 gradescope comments COMP3620 Perceptron           # rubric items, comments, regrade threads
 gradescope history COMP3620 Perceptron            # every submission you've made
+gradescope pages COMP3620 "Lab 2"                 # which PDF pages are assigned to which question
+gradescope select-pages COMP3620 "Lab 2" 1.1=1-2 1.2=3 2=4,6   # assign pages (questions left out keep theirs)
 gradescope activate COMP3620 Perceptron 123456789 # make an earlier submission the active one
 gradescope members COMP2850 "Team Project"         # who is in your group submission
 gradescope add-member COMP2850 "Team Project" "Ada Lovelace"   # add a classmate (name, email or id)
@@ -94,7 +96,7 @@ gradescope regrade COMP3620 "Lab 2" 1.3 -m "My answer matches part (b) of the sp
 `submit` supports the three ways Gradescope takes uploads:
 
 - **Code assignments**: any number of files. A `.zip` is unpacked first and its files are uploaded one by one with their paths, exactly like the website's uploader (`__MACOSX/` and `.DS_Store` are skipped). Add `--keep-zip` if an assignment really wants the archive itself.
-- **PDF assignments**: exactly one PDF. For variable-length PDFs, you still need to assign pages to questions in the browser afterwards. The command prints the link.
+- **PDF assignments**: exactly one PDF. For variable-length PDFs, Gradescope then needs each question's pages: `gradescope pages` shows them and `gradescope select-pages` assigns them (or use the link the command prints).
 - **Document assignments**: exactly one file.
 
 Online assignments (quizzes) can only be answered in the browser.
@@ -191,8 +193,10 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 | `gradescope_get_results` | Autograder test results; `waitSeconds` polls while it runs |
 | `gradescope_get_comments` | Grader feedback and regrade requests with staff replies |
 | `gradescope_list_submissions` | Every submission to an assignment, marking the active one and which can be activated |
+| `gradescope_get_page_selection` | For a PDF submission: each question's pages, and what is still unassigned |
 | `gradescope_list_group_members` | Who is in your group submission, the size limit, and whether it can still change |
 | `gradescope_submit` | Upload or resubmit (needs `confirm: true`) |
+| `gradescope_select_pages` | Assign PDF pages to questions, the step after uploading a variable-length PDF (needs `confirm: true`) |
 | `gradescope_activate_submission` | Make an earlier submission the active one (needs `confirm: true`) |
 | `gradescope_add_group_members` | Add classmates to your group submission (needs `confirm: true`) |
 | `gradescope_remove_group_member` | Remove a group member, or leave the group (needs `confirm: true`) |

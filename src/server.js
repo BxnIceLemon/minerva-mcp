@@ -427,6 +427,14 @@ tool(
 );
 
 tool(
+  'gradescope_get_page_selection',
+  'For a PDF submission, show each question and which pages are assigned to it now, the PDF page count, and which questions or pages are still unassigned. ' +
+    'Use when the user asks about the pages of a PDF submission, and before gradescope_select_pages.',
+  { courseId: gsCourse, assignmentId: gsAssignment, submissionId: gsSubmission },
+  gradescope.getPageSelection,
+);
+
+tool(
   'gradescope_list_group_members',
   'Show who is in your group submission, the group size limit, and whether members can still be changed.',
   { courseId: gsCourse, assignmentId: gsAssignment, submissionId: gsSubmission },
@@ -534,6 +542,26 @@ tool(
   },
   guarded(gradescope.requestRegrade),
   { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+);
+
+tool(
+  'gradescope_select_pages',
+  'Assign pages of a PDF submission to questions (the "Select pages" step Gradescope needs before grading, e.g. after gradescope_submit returns needsPageSelection). ' +
+    'Use when the user asks to select or assign pages. Decide the pages from the PDF the user uploaded (read it), never by guessing, and show the plan: ' +
+    'always call with dryRun: true first, then with confirm: true after the user agrees. Questions you leave out keep their pages unless replace is true.',
+  {
+    courseId: gsCourse,
+    assignmentId: gsAssignment,
+    submissionId: gsSubmission,
+    pages: z
+      .record(z.string(), z.union([z.array(z.number().int()), z.string(), z.number().int()]))
+      .describe('Question number (like "1.2"), id or unique title part → page numbers, e.g. {"1.1": [1, 2], "1.2": "3-4", "2.1": 5}. [] clears a question'),
+    replace: z.boolean().optional().describe('Clear the pages of questions not listed (default false: they keep theirs)'),
+    dryRun: z.boolean().optional().describe('Validate and return the plan without saving'),
+    confirm,
+  },
+  guarded(gradescope.selectPages),
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
 );
 
 tool(

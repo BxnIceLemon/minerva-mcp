@@ -4,6 +4,7 @@
 export * from './gradescope/read.js';
 export {
   submit,
+  selectPages,
   requestRegrade,
   activateSubmission,
   addGroupMembers,
