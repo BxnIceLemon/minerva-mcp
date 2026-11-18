@@ -9,6 +9,7 @@ import * as gradescope from './gradescope.js';
 import { loadSession } from './session.js';
 import { agentLogin, pendingLogin, withSessionRefresh } from './login-manager.js';
 import { checkForUpdate, applyUpdate } from './update.js';
+import { saveLastOutput } from './output-file.js';
 import {
   listAccounts,
   accountInfo,
@@ -141,18 +142,37 @@ function tool(name, description, inputSchema, fn, annotations, { accounts = true
     },
     async (args) => {
       let response;
+      let acct;
+      let result;
+      let error;
       try {
-        let result;
         if (accounts) {
           const { account, ...rest } = args ?? {};
-          const acct = await resolveAccount(account, `be used for ${name}`);
+          acct = await resolveAccount(account, `be used for ${name}`);
           result = await withSessionRefresh(() => withAccount(acct, () => fn(rest, acct)), acct, { rerun });
         } else {
           result = await fn(args ?? {});
         }
         response = { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (e) {
+        error = e.message;
         response = { content: [{ type: 'text', text: `Error: ${e.message}` }], isError: true };
+      }
+      // Every Gradescope query also goes, in full, to one temporary file that the
+      // next one replaces, in case the client cuts a long answer short.
+      if (name.startsWith('gradescope_')) {
+        try {
+          const file = saveLastOutput({
+            tool: name,
+            account: acct ?? null,
+            arguments: args ?? {},
+            savedAt: new Date().toISOString(),
+            ...(error === undefined ? { result } : { error }),
+          });
+          response.content.push({ type: 'text', text: `Full output saved to ${file} (replaced by the next Gradescope query).` });
+        } catch {
+          // Saving the copy must never break the answer itself.
+        }
       }
       const notice = name === 'minerva_check_update' || name === 'minerva_update' ? null : await updateNotice();
       if (notice) response.content.unshift({ type: 'text', text: notice });

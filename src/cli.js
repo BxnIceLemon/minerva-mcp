@@ -398,8 +398,7 @@ const commands = {
       console.log(`Due: ${fmtDate(plan.due)}`);
       console.log(plan.replacesSubmission ? `Replaces your active submission ${plan.replacesSubmission}` : 'First submission');
       if (plan.unzipped) console.log(`Unpacked ${plan.unzipped.join(', ')}; uploading ${plan.files.length} files:`);
-      for (const f of plan.files.slice(0, 50)) console.log(`  ${f.name}  ${f.bytes} bytes`);
-      if (plan.files.length > 50) console.log(`  … and ${plan.files.length - 50} more`);
+      for (const f of plan.files) console.log(`  ${f.name}  ${f.bytes} bytes`);
       if (plan.leaderboardName) console.log(`Leaderboard name: ${plan.leaderboardName}`);
     }
     if (o['dry-run']) return;

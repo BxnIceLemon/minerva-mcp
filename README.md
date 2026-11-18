@@ -16,6 +16,7 @@ On Minerva you can also submit files or text to Ultra assignments. On Gradescope
 - Minerva: only GET requests, except assignment submissions (`minerva submit`). Gradescope: only GET requests, except `submit`, `activate`, `add-member`, `remove-member` and `regrade`:
   - In the CLI, each one shows what it will do and ask `[y/N]` before sending. `--dry-run` only shows the plan.
   - In MCP, every write tool call needs `confirm: true`, and the agent is told to show you a dry run and get your yes first. Without `confirm: true` nothing is sent.
+- The latest Gradescope answer (which can include grades and feedback) is kept in `$TMPDIR/minerva-mcp/gradescope-last-output.json`, readable only by you, and replaced by the next one.
 - There is no telemetry.
 
 ## Usage
@@ -201,6 +202,8 @@ Restart Codex afterwards. The tools work the same in Codex. With the default 60 
 | `gradescope_add_group_members` | Add classmates to your group submission (needs `confirm: true`) |
 | `gradescope_remove_group_member` | Remove a group member, or leave the group (needs `confirm: true`) |
 | `gradescope_request_regrade` | Send or update a regrade request (needs `confirm: true`) |
+
+Gradescope answers are never shortened (autograder output included). Each `gradescope_*` call also writes its full answer, or its error, to `$TMPDIR/minerva-mcp/gradescope-last-output.json`, which the next Gradescope call replaces. The answer ends with that path, so if a client cuts a long answer short, the agent can read the whole thing there.
 
 ## Environment variables
 

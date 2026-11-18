@@ -165,7 +165,7 @@ test('the first tool call carries the update notice, later ones don\'t', async (
   });
   await new Promise((r) => api.listen(0, '127.0.0.1', r));
   const home = fs.mkdtempSync(path.join(tmp, 'home-'));
-  const env = { ...process.env, MINERVA_MCP_HOME: home, MINERVA_UPDATE_API: `http://127.0.0.1:${api.address().port}` };
+  const env = { ...process.env, MINERVA_MCP_HOME: home, TMPDIR: home, MINERVA_UPDATE_API: `http://127.0.0.1:${api.address().port}` };
   delete env.MINERVA_NO_UPDATE_CHECK;
   const client = new Client({ name: 'test', version: '0' });
   try {
