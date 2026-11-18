@@ -16,6 +16,7 @@ Minerva 还支持向 Ultra 作业提交文件或文字。Gradescope 还支持上
 - Minerva 只发 GET 请求，例外只有作业提交（`minerva submit`）。Gradescope 也只发 GET 请求，例外只有 `submit`、`activate`、`add-member`、`remove-member` 和 `regrade`：
   - 在 CLI 里，这些命令都会先显示要做什么，问你 `[y/N]`，确认后才发送。加 `--dry-run` 则只显示计划，不发送。
   - 在 MCP 里，每次调用写工具都必须带 `confirm: true`，不带就不会发送。工具说明里要求 Agent 先给你看 dry-run 的结果，得到你的同意后才能发送。
+- 最近一次 Gradescope 查询的结果（可能包含成绩和反馈）保存在 `$TMPDIR/minerva-mcp/gradescope-last-output.json`，只有你本人能读，下一次查询会覆盖。
 - 没有任何遥测。
 
 ## 使用
@@ -201,6 +202,8 @@ tool_timeout_sec = 300   # 等待登录或等 autograder 跑完，可能超过 C
 | `gradescope_add_group_members` | 把同学加入小组提交（需要 `confirm: true`） |
 | `gradescope_remove_group_member` | 移除小组成员，或自己退出（需要 `confirm: true`） |
 | `gradescope_request_regrade` | 提交或修改重评申请（需要 `confirm: true`） |
+
+Gradescope 工具的返回结果不会被截断，autograder 的输出也是完整的。每次调用 `gradescope_*` 工具，还会把完整结果（或报错）写到 `$TMPDIR/minerva-mcp/gradescope-last-output.json`，下一次 Gradescope 调用会覆盖它。返回结果末尾会附上这个路径，如果客户端把很长的结果截短了，Agent 可以去这个文件里读完整内容。
 
 ## 环境变量
 

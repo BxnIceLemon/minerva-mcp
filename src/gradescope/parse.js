@@ -111,8 +111,8 @@ function shapeAutograder(ag) {
   return {
     score: ag.score,
     executionTime: ag.execution_time,
-    output: ag.output?.slice(0, 8000) || undefined,
-    stdout: ag.stdout_shown_to_students === false ? undefined : ag.stdout?.slice(0, 8000) || undefined,
+    output: ag.output || undefined,
+    stdout: ag.stdout_shown_to_students === false ? undefined : ag.stdout || undefined,
     errorCode: ag.error_code || undefined,
     tests: (ag.tests ?? []).map((t) => ({
       name: t.name,
@@ -120,7 +120,7 @@ function shapeAutograder(ag) {
       score: t.score,
       maxScore: t.max_score,
       status: t.status,
-      output: t.output?.slice(0, 2000) || undefined,
+      output: t.output || undefined,
     })),
     leaderboard: ag.leaderboard ?? undefined,
   };

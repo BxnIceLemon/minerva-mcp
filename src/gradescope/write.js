@@ -145,7 +145,7 @@ export async function submit({ courseId, assignmentId, files, leaderboardName, u
   }
   const submissionId = submissionIdFrom(target);
   if (!submissionId) {
-    const detail = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300);
+    const detail = (await res.text().catch(() => '')).replace(/\s+/g, ' ').trim();
     throw new Error(`Upload was not accepted (HTTP ${res.status})${detail ? `: ${detail}` : ''}`);
   }
   const url = new URL(target, GS_BASE_URL).toString();
@@ -209,7 +209,7 @@ export async function requestRegrade({ courseId, assignmentId, submissionId, que
   });
   if (res.status === 403) throw new Error('Gradescope refused the regrade request (the window may be closed)');
   if (!res.ok) {
-    const detail = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300);
+    const detail = (await res.text().catch(() => '')).replace(/\s+/g, ' ').trim();
     throw new Error(`Regrade request failed (HTTP ${res.status})${detail ? `: ${detail}` : ''}`);
   }
   const saved = await res.json().catch(() => ({}));
@@ -217,7 +217,7 @@ export async function requestRegrade({ courseId, assignmentId, submissionId, que
 }
 
 async function failure(res, what) {
-  const detail = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300);
+  const detail = (await res.text().catch(() => '')).replace(/\s+/g, ' ').trim();
   if (res.status === 403) return new Error(`Gradescope refused to ${what} (not allowed for this assignment)`);
   return new Error(`Could not ${what} (HTTP ${res.status})${detail ? `: ${detail}` : ''}`);
 }

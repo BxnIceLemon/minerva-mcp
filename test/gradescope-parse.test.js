@@ -163,3 +163,14 @@ test('shapeHistory lists newest first', () => {
     ],
   );
 });
+
+test('autograder output is passed through in full', () => {
+  const long = 'x'.repeat(50000);
+  const props = {
+    ...PROPS,
+    autograder_results: { ...PROPS.autograder_results, output: long, stdout: long, tests: [{ name: 't', score: 1, max_score: 1, status: 'passed', output: long }] },
+  };
+  const ag = shapeSubmission(props, '').autograder;
+  assert.equal(ag.output.length, 50000);
+  assert.equal(ag.tests[0].output.length, 50000);
+});
