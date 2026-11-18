@@ -57,10 +57,21 @@ function windowsDefault() {
   return exe ? describe(exe) : null;
 }
 
+/**
+ * The bundle id that handles https links, from `defaults read ... LSHandlers`
+ * output. Each handler can contain a nested LSHandlerPreferredVersions block
+ * with its own LSHandlerRoleAll (often "-"), so nested blocks are skipped.
+ */
+export function macHttpsHandler(plist) {
+  const block = String(plist ?? '').split(/\},?\s*\{/).find((b) => /LSHandlerURLScheme\s*=\s*https;/.test(b));
+  const own = block?.replace(/=\s*\{[^{}]*\};/g, '= {};');
+  const bundle = own?.match(/LSHandlerRoleAll\s*=\s*"?([\w.-]+)"?;/)?.[1];
+  return bundle && bundle !== '-' ? bundle : null;
+}
+
 function macDefault() {
   const plist = run('defaults', ['read', `${os.homedir()}/Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure`, 'LSHandlers']);
-  const block = plist.split(/\},?\s*\{/).find((b) => /LSHandlerURLScheme\s*=\s*https;/.test(b));
-  const bundle = block?.match(/LSHandlerRoleAll\s*=\s*"?([\w.-]+)"?;/)?.[1];
+  const bundle = macHttpsHandler(plist);
   const apps = {
     'com.microsoft.edgemac': 'Microsoft Edge',
     'com.google.chrome': 'Google Chrome',
